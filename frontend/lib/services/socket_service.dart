@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import '../providers/game_provider.dart';
@@ -9,15 +10,25 @@ class SocketService {
   final GameProvider gameProvider;
   WebSocketChannel? _channel;
   String? _username;
+  Timer? _reconnectTimer;
+  Timer? _pingTimer;
+  bool _isConnected = false;
 
   SocketService(this.gameProvider);
 
   void connect(String username) {
     _username = username;
+    _initConnection();
+  }
+
+  void _initConnection() {
+    if (_username == null) return;
+
     // Using localhost for web/desktop.
     // If testing on Android Emulator, use 'ws://10.0.2.2:3000/ws'
     final uri = Uri.parse('ws://127.0.0.1:3000/ws');
     _channel = WebSocketChannel.connect(uri);
+    _isConnected = true;
 
     _channel!.stream.listen(
       (message) {
@@ -25,13 +36,38 @@ class SocketService {
       },
       onError: (error) {
         print("Socket error: $error");
+        _isConnected = false;
+        _scheduleReconnect();
       },
       onDone: () {
         print("Socket closed");
+        _isConnected = false;
+        _scheduleReconnect();
       },
     );
 
-    _send({'type': 'Connect', 'payload': {'username': username}});
+    _send({'type': 'Connect', 'payload': {'username': _username}});
+    _startHeartbeat();
+  }
+
+  void _scheduleReconnect() {
+    _pingTimer?.cancel();
+    if (_reconnectTimer?.isActive ?? false) return;
+
+    print("Scheduling reconnect in 3 seconds...");
+    _reconnectTimer = Timer(const Duration(seconds: 3), () {
+      print("Attempting reconnect...");
+      _initConnection();
+    });
+  }
+
+  void _startHeartbeat() {
+    _pingTimer?.cancel();
+    _pingTimer = Timer.periodic(const Duration(seconds: 10), (timer) {
+      if (_isConnected) {
+        _send({'type': 'Ping', 'payload': null});
+      }
+    });
   }
 
   void _handleMessage(String message) {
@@ -45,6 +81,8 @@ class SocketService {
           if (_username != null) {
              final user = User(id: payload['user_id'], username: _username!);
              gameProvider.setConnected(user);
+             // Auto-fetch history on connect
+             sendFetchHistory();
           }
           break;
         case 'MatchFound':
@@ -64,6 +102,23 @@ class SocketService {
             isMe: false,
           );
           gameProvider.addMessage(msg);
+          break;
+        case 'History':
+          final List<dynamic> msgs = payload['messages'];
+          final List<ChatMessage> parsedMsgs = msgs.map((m) => ChatMessage(
+            senderId: m['sender_id'],
+            content: m['content'],
+            isMe: m['sender_id'] == gameProvider.currentUser?.id,
+          )).toList();
+          // Clear and set
+          // Ideally GameProvider should have a setMessages method, for now we can iterate
+          for (var msg in parsedMsgs) {
+             // Basic deduplication check could be here
+             gameProvider.addMessage(msg);
+          }
+          break;
+        case 'Pong':
+          // Alive
           break;
         case 'Error':
           print("Server Error: ${payload['message']}");
@@ -92,13 +147,30 @@ class SocketService {
     });
   }
 
+  void sendUpdateProfile(String bio, List<String> tags, String avatarConfig) {
+    _send({
+      'type': 'UpdateProfile',
+      'payload': {
+        'bio': bio,
+        'tags': tags,
+        'avatar_config': avatarConfig,
+      }
+    });
+  }
+
+  void sendFetchHistory() {
+    _send({'type': 'FetchHistory', 'payload': null});
+  }
+
   void _send(Map<String, dynamic> data) {
-    if (_channel != null) {
+    if (_channel != null && _isConnected) {
       _channel!.sink.add(jsonEncode(data));
     }
   }
 
   void dispose() {
+    _reconnectTimer?.cancel();
+    _pingTimer?.cancel();
     _channel?.sink.close();
   }
 }

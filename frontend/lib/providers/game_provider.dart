@@ -89,6 +89,10 @@ class GameProvider with ChangeNotifier {
     }
   }
 
+  void updateProfile(String bio, List<String> tags, String avatarConfig) {
+    _socketService.sendUpdateProfile(bio, tags, avatarConfig);
+  }
+
   @override
   void dispose() {
     _socketService.dispose();

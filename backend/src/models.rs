@@ -1,6 +1,6 @@
-use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct User {
@@ -32,7 +32,7 @@ pub struct GameSession {
 pub struct ChatMessage {
     pub sender_id: Uuid,
     pub content: String,
-    pub timestamp: String, // ISO 8601 string for simplicity
+    pub timestamp: String,
 }
 
 // WebSocket Communication Models
@@ -41,18 +41,25 @@ pub struct ChatMessage {
 #[serde(tag = "type", content = "payload")]
 pub enum ClientMessage {
     Connect { username: String },
+    UpdateProfile { bio: String, tags: Vec<String>, avatar_config: String },
     FindMatch,
     AnswerQuestion { choice: String, comment: Option<String> }, // choice: "A" or "B"
     SendMessage { content: String },
+    FetchHistory,
+    Ping,
+    Pong,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload")]
 pub enum ServerMessage {
+    Ping,
+    Pong,
     Connected { user_id: Uuid },
     MatchFound { opponent_name: String },
     Question { id: Uuid, text: String, option_a: String, option_b: String },
     AffinityUpdate { score: u32, unlocked: bool },
     ChatMessage { sender_id: Uuid, content: String },
+    History { messages: Vec<ChatMessage> },
     Error { message: String },
 }
