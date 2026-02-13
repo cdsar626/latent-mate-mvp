@@ -23,11 +23,12 @@ LatentMate's backend is configured to use a PostgreSQL database, making it fully
 
 1.  Once the project is ready, go to **Project Settings** (cog icon) -> **Database**.
 2.  Under **Connection string**, make sure **URI** is selected.
-3.  Copy the connection string. It will look like this:
+3.  **IMPORTANT:** Uncheck "Use connection pooling". You MUST use the **Session Mode** connection (Port **5432**) because the Rust backend (`sqlx`) uses prepared statements, which are incompatible with the Transaction Pooler (Port 6543).
+4.  Copy the connection string. It will look like this:
     ```
-    postgresql://postgres.xxxx:[YOUR-PASSWORD]@aws-0-us-east-1.pooler.supabase.com:6543/postgres
+    postgresql://postgres.xxxx:[YOUR-PASSWORD]@aws-0-us-east-1.pooler.supabase.com:5432/postgres
     ```
-4.  Replace `[YOUR-PASSWORD]` with the password you created in Step 1.
+5.  Replace `[YOUR-PASSWORD]` with the password you created in Step 1.
 
 ## Step 3: Configure Backend
 
@@ -56,18 +57,20 @@ cargo run
 
 ## Troubleshooting
 
+### "prepared statement ... already exists" (Error 42P05)
+
+If you see this error, you are likely connecting to port **6543** (Transaction Pooler). `sqlx` requires a direct session connection or a session-mode pooler.
+
+**Fix:**
+1.  Change the port in your `DATABASE_URL` from `6543` to **5432**.
+2.  If you are stuck in a bad state (tables partially created or migration failed), you can reset the database by running the SQL in `backend/reset_db.sql` via the **Supabase SQL Editor** in your dashboard. Then run `sqlx migrate run` again.
+
 ### "Network is unreachable" Error
 
-If you see `error: error communicating with database: Network is unreachable`, it usually means your network cannot connect to the Supabase **IPv6** address or the **Transaction Pooler** (port 6543).
+If you see `error: error communicating with database: Network is unreachable`, it usually means your network cannot connect to the Supabase **IPv6** address.
 
-**Fix 1: Use the IPv4 (Direct) Connection**
-1.  Go to **Project Settings** -> **Database**.
-2.  Uncheck "Use connection pooling" (just to see the direct URI, or look for "Direct connection").
-3.  Copy the URI which usually has port **5432** and might look like `db.ref.supabase.co`.
-4.  Update your `backend/.env` file with this string.
-
-**Fix 2: Change Port**
-Try changing the port in your connection string from `6543` to `5432`.
+**Fix:**
+Use the IPv4 (Direct) Connection string if available in Supabase settings (look for "Direct connection" or disable pooling). Ensure you are using port **5432**.
 
 ### "Certificate Error"
 If you get SSL/TLS errors, ensure you have `openssl` installed on your system (`sudo apt install libssl-dev` on Linux). The project is configured to use `native-tls` which relies on your OS certificate store.
