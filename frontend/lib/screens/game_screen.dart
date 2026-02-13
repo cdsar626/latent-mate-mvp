@@ -75,10 +75,37 @@ class GameScreen extends StatelessWidget {
           // Question area
           _buildQuestionArea(gp, question),
           const Divider(height: 1),
-          // Chat area
-          const Expanded(
+          // Chat area — locked until affinity threshold
+          Expanded(
             flex: 3,
-            child: ChatScreen(),
+            child: gp.chatUnlocked
+                ? const ChatScreen()
+                : Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.lock_outline, size: 40, color: Colors.grey[400]),
+                          const SizedBox(height: 12),
+                          Text(
+                            "Chat is locked",
+                            style: GoogleFonts.poppins(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            "Answer questions together to build affinity and unlock the chat!",
+                            style: GoogleFonts.poppins(fontSize: 13, color: Colors.grey[400]),
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ).animate().fadeIn(),
           ),
         ],
       ),
