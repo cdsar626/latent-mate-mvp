@@ -1,0 +1,18 @@
+Analyzing frontend...
+
+  error • The getter 'opponentName' isn't defined for the type 'GameProvider' • lib/screens/game_screen.dart:16:48 • undefined_getter
+   info • Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check • lib/screens/home_screen.dart:77:30 • use_build_context_synchronously
+   info • 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss • lib/screens/home_screen.dart:160:64 • deprecated_member_use
+   info • 'value' is deprecated and shouldn't be used. Use component accessors like .r or .g, or toARGB32 for an explicit conversion • lib/screens/profile_setup_screen.dart:35:23 • deprecated_member_use
+warning • The value of the local variable 'userId' isn't used • lib/screens/splash_screen.dart:36:13 • unused_local_variable
+   info • 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss • lib/screens/splash_screen.dart:143:45 • deprecated_member_use
+   info • 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss • lib/screens/splash_screen.dart:158:45 • deprecated_member_use
+   info • Don't invoke 'print' in production code • lib/services/socket_service.dart:41:9 • avoid_print
+   info • Don't invoke 'print' in production code • lib/services/socket_service.dart:46:9 • avoid_print
+   info • Don't invoke 'print' in production code • lib/services/socket_service.dart:68:5 • avoid_print
+   info • Don't invoke 'print' in production code • lib/services/socket_service.dart:70:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/services/socket_service.dart:141:11 • avoid_print
+   info • Don't invoke 'print' in production code • lib/services/socket_service.dart:145:7 • avoid_print
+   info • 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss • lib/widgets/pet_widget.dart:15:22 • deprecated_member_use
+
+14 issues found. (ran in 5.1s)

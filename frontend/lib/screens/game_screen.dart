@@ -13,7 +13,7 @@ class GameScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('Match with ${gameProvider.opponentName}'),
+        title: Text('Match with ${gameProvider.currentMatch?.opponentUsername ?? "Unknown"}'),
         actions: [
             Padding(
                 padding: const EdgeInsets.only(right: 16),
