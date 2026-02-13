@@ -1,12 +1,14 @@
-use std::{collections::HashMap, sync::{Arc, Mutex}};
+use std::collections::HashMap;
 use uuid::Uuid;
-use crate::models::{User, GameSession, Question};
-use crate::questions::get_questions;
+use sqlx::PgPool;
 use tokio::sync::mpsc;
 use axum::extract::ws::Message;
-use sqlx::PgPool;
+use crate::models::{User, GameSession, Question};
+use crate::questions::get_questions;
+use std::sync::{Arc, Mutex};
 
 pub type Tx = mpsc::UnboundedSender<Message>;
+pub type SharedState = Arc<Mutex<AppState>>;
 
 pub struct AppState {
     pub users: HashMap<Uuid, User>,
@@ -31,5 +33,3 @@ impl AppState {
         }
     }
 }
-
-pub type SharedState = Arc<Mutex<AppState>>;

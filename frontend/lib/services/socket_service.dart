@@ -91,11 +91,14 @@ class SocketService {
           if (_username != null) {
              final user = User(id: payload['user_id'], username: _username!);
              gameProvider.setConnected(user);
-             // Auto-fetch history on connect
-             sendFetchHistory();
+             sendFetchActiveMatches();
           }
           break;
+        case 'SearchingAck':
+          gameProvider.setSearching(true);
+          break;
         case 'MatchFound':
+          gameProvider.setSearching(false);
           gameProvider.setMatchFound(payload['opponent_name']);
           break;
         case 'ActiveMatches':
@@ -103,14 +106,20 @@ class SocketService {
           final List<ActiveMatch> parsed = matches.map((m) => ActiveMatch.fromJson(m)).toList();
           gameProvider.setActiveMatches(parsed);
           break;
+        case 'ArchivedMatches':
+          final List<dynamic> matches = payload['matches'];
+          final List<ActiveMatch> parsed = matches.map((m) => ActiveMatch.fromJson(m)).toList();
+          gameProvider.setArchivedMatches(parsed);
+          break;
         case 'UserStatus':
-          // Optional: Update specific user online status in the list locally
-          // For MVP, just refreshing matches is easier if status changes often
           sendFetchActiveMatches();
           break;
         case 'Question':
           final question = Question.fromJson(payload);
           gameProvider.setQuestion(question);
+          break;
+        case 'NoMoreQuestions':
+          gameProvider.setNoMoreQuestions();
           break;
         case 'AffinityUpdate':
           gameProvider.updateAffinity(payload['score'], payload['unlocked']);
@@ -134,10 +143,23 @@ class SocketService {
              gameProvider.addMessage(msg);
           }
           break;
+        case 'UserProfile':
+          gameProvider.setViewedProfile(payload);
+          break;
+        case 'ProfileUpdated':
+          gameProvider.onProfileUpdated();
+          break;
+        case 'MatchSuppressed':
+          gameProvider.onMatchSuppressed(payload['match_id']);
+          break;
+        case 'MatchDeleted':
+          gameProvider.onMatchDeleted(payload['match_id']);
+          break;
         case 'Pong':
           break;
         case 'Error':
           print("Server Error: ${payload['message']}");
+          gameProvider.setSearching(false);
           break;
       }
     } catch (e) {
@@ -180,6 +202,31 @@ class SocketService {
 
   void sendFetchActiveMatches() {
     _send({'type': 'FetchActiveMatches', 'payload': null});
+  }
+
+  void sendFetchArchivedMatches() {
+    _send({'type': 'FetchArchivedMatches', 'payload': null});
+  }
+
+  void sendFetchUserProfile(String userId) {
+    _send({
+      'type': 'FetchUserProfile',
+      'payload': {'user_id': userId}
+    });
+  }
+
+  void sendSuppressMatch(String matchId) {
+    _send({
+      'type': 'SuppressMatch',
+      'payload': {'match_id': matchId}
+    });
+  }
+
+  void sendDeleteMatch(String matchId) {
+    _send({
+      'type': 'DeleteMatch',
+      'payload': {'match_id': matchId}
+    });
   }
 
   void _send(Map<String, dynamic> data) {

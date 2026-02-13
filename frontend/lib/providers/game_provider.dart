@@ -15,14 +15,19 @@ enum GameState {
 class GameProvider with ChangeNotifier {
   GameState _gameState = GameState.connecting;
   User? _currentUser;
-  ActiveMatch? _currentMatch; // Selected match for chat/game
+  ActiveMatch? _currentMatch;
   List<ActiveMatch> _activeMatches = [];
+  List<ActiveMatch> _archivedMatches = [];
 
   Question? _currentQuestion;
   int _affinity = 0;
   bool _chatUnlocked = false;
   final List<ChatMessage> _messages = [];
   bool _hasAnswered = false;
+  bool _isSearching = false;
+  bool _noMoreQuestions = false;
+  Map<String, dynamic>? _viewedProfile;
+  bool _profileUpdated = false;
 
   late SocketService _socketService;
 
@@ -30,11 +35,16 @@ class GameProvider with ChangeNotifier {
   User? get currentUser => _currentUser;
   ActiveMatch? get currentMatch => _currentMatch;
   List<ActiveMatch> get activeMatches => _activeMatches;
+  List<ActiveMatch> get archivedMatches => _archivedMatches;
   Question? get currentQuestion => _currentQuestion;
   int get affinity => _affinity;
   bool get chatUnlocked => _chatUnlocked;
   List<ChatMessage> get messages => _messages;
   bool get hasAnswered => _hasAnswered;
+  bool get isSearching => _isSearching;
+  bool get noMoreQuestions => _noMoreQuestions;
+  Map<String, dynamic>? get viewedProfile => _viewedProfile;
+  bool get profileUpdated => _profileUpdated;
 
   void init(String username) {
      _socketService = SocketService(this);
@@ -49,45 +59,79 @@ class GameProvider with ChangeNotifier {
   }
 
   void findMatch() {
+    if (_isSearching) return; // Guard against multiple taps
+    _isSearching = true;
     _gameState = GameState.matching;
     _socketService.sendFindMatch();
     notifyListeners();
   }
 
+  void setSearching(bool searching) {
+    _isSearching = searching;
+    if (searching) {
+      _gameState = GameState.matching;
+    }
+    notifyListeners();
+  }
+
   void setMatchFound(String opponent) {
-    // Ideally backend sends full ActiveMatch structure on MatchFound.
-    // For now we assume a fetch refresh happens or we build a temporary one.
-    // Simulating refresh:
+    _isSearching = false;
+    _gameState = GameState.lobby;
     _socketService.sendFetchActiveMatches();
     notifyListeners();
   }
 
   void setActiveMatches(List<ActiveMatch> matches) {
     _activeMatches = matches;
+    _isSearching = false;
+    if (_gameState == GameState.matching) {
+      _gameState = GameState.lobby;
+    }
     notifyListeners();
+  }
+
+  void setArchivedMatches(List<ActiveMatch> matches) {
+    _archivedMatches = matches;
+    notifyListeners();
+  }
+
+  void fetchArchivedMatches() {
+    _socketService.sendFetchArchivedMatches();
   }
 
   void selectMatch(ActiveMatch match) {
     _currentMatch = match;
     _affinity = match.affinity;
-    // Assume logic to check if unlocked based on affinity or backend data
-    _chatUnlocked = match.affinity >= 100; // MVP rule? Or backend says so.
-
-    // Fetch history for this match (Need to update protocol to support match_id, or backend infers)
-    // _socketService.sendFetchHistory(match.id);
+    _chatUnlocked = match.affinity >= 1;
+    _messages.clear();
+    _currentQuestion = null;
+    _hasAnswered = false;
+    _noMoreQuestions = false;
     _gameState = GameState.inGame;
     notifyListeners();
   }
 
   void clearSelection() {
     _currentMatch = null;
+    _currentQuestion = null;
+    _hasAnswered = false;
+    _noMoreQuestions = false;
+    _messages.clear();
     _gameState = GameState.lobby;
+    _socketService.sendFetchActiveMatches();
     notifyListeners();
   }
 
   void setQuestion(Question q) {
     _currentQuestion = q;
     _hasAnswered = false;
+    _noMoreQuestions = false;
+    notifyListeners();
+  }
+
+  void setNoMoreQuestions() {
+    _noMoreQuestions = true;
+    _currentQuestion = null;
     notifyListeners();
   }
 
@@ -119,7 +163,48 @@ class GameProvider with ChangeNotifier {
   }
 
   void updateProfile(String bio, List<String> tags, String avatarConfig) {
+    _profileUpdated = false;
     _socketService.sendUpdateProfile(bio, tags, avatarConfig);
+  }
+
+  void onProfileUpdated() {
+    _profileUpdated = true;
+    notifyListeners();
+  }
+
+  void fetchUserProfile(String userId) {
+    _viewedProfile = null;
+    _socketService.sendFetchUserProfile(userId);
+  }
+
+  void setViewedProfile(Map<String, dynamic> profile) {
+    _viewedProfile = profile;
+    notifyListeners();
+  }
+
+  void suppressMatch(String matchId) {
+    _socketService.sendSuppressMatch(matchId);
+  }
+
+  void onMatchSuppressed(String matchId) {
+    _activeMatches.removeWhere((m) => m.id == matchId);
+    if (_currentMatch?.id == matchId) {
+      _currentMatch = null;
+      _gameState = GameState.lobby;
+    }
+    _socketService.sendFetchActiveMatches();
+    _socketService.sendFetchArchivedMatches();
+    notifyListeners();
+  }
+
+  void deleteMatch(String matchId) {
+    _socketService.sendDeleteMatch(matchId);
+  }
+
+  void onMatchDeleted(String matchId) {
+    _archivedMatches.removeWhere((m) => m.id == matchId);
+    _socketService.sendFetchArchivedMatches();
+    notifyListeners();
   }
 
   @override

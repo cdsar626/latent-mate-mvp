@@ -3,7 +3,7 @@ class ActiveMatch {
   final String opponentUsername;
   final String? avatarConfig;
   final int affinity;
-  final DateTime lastActivity;
+  final String lastActivity;
   final bool isOnline;
 
   ActiveMatch({
@@ -20,8 +20,8 @@ class ActiveMatch {
       id: json['id'],
       opponentUsername: json['opponent_username'],
       avatarConfig: json['avatar_config'],
-      affinity: json['affinity'],
-      lastActivity: DateTime.tryParse(json['last_activity']) ?? DateTime.now(),
+      affinity: json['affinity'] ?? 0,
+      lastActivity: json['last_activity'] ?? '',
       isOnline: json['is_online'] ?? false,
     );
   }

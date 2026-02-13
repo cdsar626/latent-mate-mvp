@@ -13,8 +13,10 @@ pub struct User {
 pub struct Question {
     pub id: Uuid,
     pub text: String,
-    pub option_a: String,
-    pub option_b: String,
+    pub options: Vec<String>,
+    pub min_affinity: u32,
+    pub language: String,
+    pub translatable: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -26,6 +28,8 @@ pub struct GameSession {
     pub chat_unlocked: bool,
     #[serde(default)]
     pub current_answers: HashMap<Uuid, (String, Option<String>)>,
+    #[serde(default)]
+    pub answered_question_ids: Vec<Uuid>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -53,10 +57,14 @@ pub enum ClientMessage {
     Connect { user_id: String, username: String, email: Option<String> },
     UpdateProfile { bio: String, tags: Vec<String>, avatar_config: String },
     FindMatch,
-    AnswerQuestion { choice: String, comment: Option<String> }, // choice: "A" or "B"
+    AnswerQuestion { choice: String, comment: Option<String> },
     SendMessage { content: String },
     FetchHistory,
     FetchActiveMatches,
+    FetchArchivedMatches,
+    FetchUserProfile { user_id: String },
+    SuppressMatch { match_id: String },
+    DeleteMatch { match_id: String },
     Ping,
     Pong,
 }
@@ -67,12 +75,19 @@ pub enum ServerMessage {
     Ping,
     Pong,
     Connected { user_id: Uuid },
+    SearchingAck,
     MatchFound { opponent_name: String },
-    Question { id: Uuid, text: String, option_a: String, option_b: String },
+    Question { id: Uuid, text: String, options: Vec<String> },
+    NoMoreQuestions,
     AffinityUpdate { score: u32, unlocked: bool },
     ChatMessage { sender_id: Uuid, content: String },
     History { messages: Vec<ChatMessage> },
     ActiveMatches { matches: Vec<ActiveMatch> },
+    ArchivedMatches { matches: Vec<ActiveMatch> },
     UserStatus { user_id: Uuid, is_online: bool },
+    UserProfile { user_id: Uuid, username: String, bio: Option<String>, tags: Option<String>, avatar_config: Option<String> },
+    ProfileUpdated,
+    MatchSuppressed { match_id: Uuid },
+    MatchDeleted { match_id: Uuid },
     Error { message: String },
 }

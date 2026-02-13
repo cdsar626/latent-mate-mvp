@@ -1,71 +1,194 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:provider/provider.dart';
 import '../providers/game_provider.dart';
+import '../models/question.dart';
 import 'chat_screen.dart';
+import 'profile_view_screen.dart';
 
 class GameScreen extends StatelessWidget {
   const GameScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final gameProvider = Provider.of<GameProvider>(context);
-    final question = gameProvider.currentQuestion;
+    final gp = Provider.of<GameProvider>(context);
+    final question = gp.currentQuestion;
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('Match with ${gameProvider.currentMatch?.opponentUsername ?? "Unknown"}'),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () {
+            gp.clearSelection();
+            Navigator.of(context).pop();
+          },
+        ),
+        title: Text(
+          gp.currentMatch?.opponentUsername ?? "Match",
+          style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+        ),
         actions: [
-            Padding(
-                padding: const EdgeInsets.only(right: 16),
-                child: Center(child: Text("Affinity: ${gameProvider.affinity}"))
-            )
+          // View partner profile
+          IconButton(
+            icon: const Icon(Icons.person_outline),
+            tooltip: "View Profile",
+            onPressed: () {
+              // We need the opponent's user ID — for now we'll use the match info
+              // The match object doesn't carry opponent_id directly, so we use a fetch
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const ProfileViewScreen()),
+              );
+            },
+          ),
+          // Suppress/dismiss match
+          PopupMenuButton<String>(
+            onSelected: (value) {
+              if (value == 'suppress') {
+                _confirmSuppressMatch(context, gp);
+              }
+            },
+            itemBuilder: (_) => [
+              const PopupMenuItem(value: 'suppress', child: Text("Dismiss Match")),
+            ],
+          ),
+          Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: Center(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.deepPurple.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  "❤️ ${gp.affinity}",
+                  style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.deepPurple),
+                ),
+              ),
+            ),
+          ),
         ],
       ),
       body: Column(
         children: [
-          Expanded(
-            flex: 2,
-            child: question == null
-                ? const Center(child: Text("Waiting for question..."))
-                : Padding(
-                    padding: const EdgeInsets.all(24.0),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          question.text,
-                          style: Theme.of(context).textTheme.headlineSmall,
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 32),
-                        if (gameProvider.hasAnswered)
-                           const Text("Waiting for opponent...")
-                        else
-                          Row(
-                            children: [
-                              Expanded(
-                                child: ElevatedButton(
-                                  onPressed: () => gameProvider.answerQuestion(question.optionA),
-                                  child: Text(question.optionA),
-                                ),
-                              ),
-                              const SizedBox(width: 16),
-                              Expanded(
-                                child: ElevatedButton(
-                                  onPressed: () => gameProvider.answerQuestion(question.optionB),
-                                  child: Text(question.optionB),
-                                ),
-                              ),
-                            ],
-                          ),
-                      ],
-                    ),
-                  ),
-          ),
-          const Divider(),
+          // Question area
+          _buildQuestionArea(gp, question),
+          const Divider(height: 1),
+          // Chat area
           const Expanded(
             flex: 3,
             child: ChatScreen(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildQuestionArea(GameProvider gp, Question? question) {
+    if (gp.noMoreQuestions) {
+      return Container(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          children: [
+            const Icon(Icons.celebration, size: 36, color: Colors.amber),
+            const SizedBox(height: 8),
+            Text(
+              "You've answered all available questions!",
+              style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w600),
+              textAlign: TextAlign.center,
+            ),
+            Text(
+              "Keep chatting to grow your connection.",
+              style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ).animate().fadeIn();
+    }
+
+    if (question == null) {
+      return Container(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          children: [
+            const SizedBox(height: 8),
+            const SizedBox(
+              width: 24, height: 24,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            const SizedBox(height: 8),
+            Text("Waiting for question...", style: GoogleFonts.poppins(color: Colors.grey)),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(20.0),
+      child: Column(
+        children: [
+          Text(
+            question.text,
+            style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w600),
+            textAlign: TextAlign.center,
+          ).animate().fadeIn(),
+          const SizedBox(height: 16),
+          if (gp.hasAnswered)
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const SizedBox(
+                  width: 16, height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.deepPurple),
+                ),
+                const SizedBox(width: 8),
+                Text("Waiting for opponent...", style: GoogleFonts.poppins(fontSize: 13, color: Colors.grey)),
+              ],
+            )
+          else
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              alignment: WrapAlignment.center,
+              children: question.options.map((option) {
+                return ElevatedButton(
+                  onPressed: () => gp.answerQuestion(option),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.deepPurple.withOpacity(0.1),
+                    foregroundColor: Colors.deepPurple,
+                    elevation: 0,
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: Text(option, textAlign: TextAlign.center, style: GoogleFonts.poppins(fontSize: 13)),
+                );
+              }).toList(),
+            ).animate().fadeIn(delay: 100.ms),
+        ],
+      ),
+    );
+  }
+
+  void _confirmSuppressMatch(BuildContext context, GameProvider gp) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Dismiss Match?"),
+        content: Text("${gp.currentMatch?.opponentUsername} will be moved to your archive."),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Cancel")),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              if (gp.currentMatch != null) {
+                gp.suppressMatch(gp.currentMatch!.id);
+                Navigator.of(context).pop(); // Go back to home
+              }
+            },
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text("Dismiss"),
           ),
         ],
       ),

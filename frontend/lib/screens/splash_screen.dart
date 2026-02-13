@@ -21,6 +21,7 @@ class _SplashScreenState extends State<SplashScreen> {
   final TextEditingController _passwordController = TextEditingController();
   bool _isLogin = true;
   bool _isLoading = false;
+  bool _isCheckingSession = true;
 
   @override
   void initState() {
@@ -29,16 +30,19 @@ class _SplashScreenState extends State<SplashScreen> {
   }
 
   Future<void> _checkSession() async {
-    await Future.delayed(const Duration(seconds: 2));
+    // Quick check — no artificial delay
     if (_authService.currentUser != null) {
       if (!mounted) return;
-      // Initialize with user ID instead of just username
-      final userId = _authService.currentUserId!;
       final username = _authService.currentUsername ?? "User";
-      Provider.of<GameProvider>(context, listen: false).init(username); // Using username for socket connect for now
+      Provider.of<GameProvider>(context, listen: false).init(username);
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (_) => const HomeScreen()),
       );
+      return;
+    }
+    // No session found, show the login form
+    if (mounted) {
+      setState(() => _isCheckingSession = false);
     }
   }
 
@@ -58,7 +62,6 @@ class _SplashScreenState extends State<SplashScreen> {
       } else {
         final response = await _authService.signUp(email, password);
 
-        // Check if email confirmation is required (session is null)
         if (response.session == null && response.user != null) {
            if (!mounted) return;
            await showDialog(
@@ -71,7 +74,6 @@ class _SplashScreenState extends State<SplashScreen> {
                ],
              ),
            );
-           // Switch to login mode so they can login after verifying
            setState(() => _isLogin = true);
            return;
         }
@@ -81,7 +83,6 @@ class _SplashScreenState extends State<SplashScreen> {
 
       final username = email.split('@')[0];
 
-      // Navigate to profile setup if new user (signup), else Home
       if (!_isLogin) {
          Navigator.of(context).pushReplacement(
           MaterialPageRoute(builder: (_) => ProfileSetupScreen(username: username)),
@@ -118,80 +119,103 @@ class _SplashScreenState extends State<SplashScreen> {
           ),
         ),
         child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(32.0),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Icons.favorite, size: 80, color: Colors.white)
-                    .animate()
-                    .scale(duration: 600.ms, curve: Curves.easeOutBack),
-                const SizedBox(height: 24),
-                Text(
-                  'LatentMate',
-                  style: GoogleFonts.pacifico(
-                    fontSize: 48,
-                    color: Colors.white,
-                  ),
-                ).animate().fadeIn().moveY(begin: 20, end: 0),
-                const SizedBox(height: 48),
-                TextField(
-                  controller: _emailController,
-                  decoration: InputDecoration(
-                    hintText: "Email",
-                    filled: true,
-                    fillColor: Colors.white.withOpacity(0.9),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(30),
-                      borderSide: BorderSide.none,
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                  ),
-                ).animate().fadeIn(delay: 500.ms),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: _passwordController,
-                  obscureText: true,
-                  decoration: InputDecoration(
-                    hintText: "Password",
-                    filled: true,
-                    fillColor: Colors.white.withOpacity(0.9),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(30),
-                      borderSide: BorderSide.none,
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                  ),
-                ).animate().fadeIn(delay: 600.ms),
-                const SizedBox(height: 24),
-                if (_isLoading)
-                  const CircularProgressIndicator(color: Colors.white)
-                else
-                  Column(
-                    children: [
-                      ElevatedButton(
-                        onPressed: _authenticate,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.white,
-                          foregroundColor: const Color(0xFF2575FC),
-                          padding: const EdgeInsets.symmetric(horizontal: 48, vertical: 16),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
-                        ),
-                        child: Text(_isLogin ? "Login" : "Sign Up", style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                      ),
-                      TextButton(
-                        onPressed: () => setState(() => _isLogin = !_isLogin),
-                        child: Text(
-                          _isLogin ? "Create an account" : "I have an account",
-                          style: const TextStyle(color: Colors.white),
-                        ),
-                      )
-                    ],
-                  ).animate().fadeIn(delay: 700.ms).moveY(begin: 20, end: 0),
-              ],
-            ),
-          ),
+          child: _isCheckingSession
+              ? _buildSplashView()
+              : _buildAuthView(),
         ),
+      ),
+    );
+  }
+
+  /// Branded splash shown while checking auth session
+  Widget _buildSplashView() {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        const Icon(Icons.favorite, size: 80, color: Colors.white)
+            .animate()
+            .scale(duration: 600.ms, curve: Curves.easeOutBack),
+        const SizedBox(height: 24),
+        Text(
+          'LatentMate',
+          style: GoogleFonts.pacifico(fontSize: 48, color: Colors.white),
+        ).animate().fadeIn().moveY(begin: 20, end: 0),
+        const SizedBox(height: 32),
+        const CircularProgressIndicator(color: Colors.white70),
+      ],
+    );
+  }
+
+  /// Login / Sign-up form
+  Widget _buildAuthView() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(32.0),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.favorite, size: 80, color: Colors.white)
+              .animate()
+              .scale(duration: 600.ms, curve: Curves.easeOutBack),
+          const SizedBox(height: 24),
+          Text(
+            'LatentMate',
+            style: GoogleFonts.pacifico(fontSize: 48, color: Colors.white),
+          ).animate().fadeIn().moveY(begin: 20, end: 0),
+          const SizedBox(height: 48),
+          TextField(
+            controller: _emailController,
+            decoration: InputDecoration(
+              hintText: "Email",
+              filled: true,
+              fillColor: Colors.white.withOpacity(0.9),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(30),
+                borderSide: BorderSide.none,
+              ),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+            ),
+          ).animate().fadeIn(delay: 200.ms),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _passwordController,
+            obscureText: true,
+            decoration: InputDecoration(
+              hintText: "Password",
+              filled: true,
+              fillColor: Colors.white.withOpacity(0.9),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(30),
+                borderSide: BorderSide.none,
+              ),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+            ),
+          ).animate().fadeIn(delay: 300.ms),
+          const SizedBox(height: 24),
+          if (_isLoading)
+            const CircularProgressIndicator(color: Colors.white)
+          else
+            Column(
+              children: [
+                ElevatedButton(
+                  onPressed: _authenticate,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.white,
+                    foregroundColor: const Color(0xFF2575FC),
+                    padding: const EdgeInsets.symmetric(horizontal: 48, vertical: 16),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+                  ),
+                  child: Text(_isLogin ? "Login" : "Sign Up", style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                ),
+                TextButton(
+                  onPressed: () => setState(() => _isLogin = !_isLogin),
+                  child: Text(
+                    _isLogin ? "Create an account" : "I have an account",
+                    style: const TextStyle(color: Colors.white),
+                  ),
+                )
+              ],
+            ).animate().fadeIn(delay: 400.ms).moveY(begin: 20, end: 0),
+        ],
       ),
     );
   }

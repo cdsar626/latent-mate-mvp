@@ -14,12 +14,19 @@ use handlers::ws_handler;
 use sqlx::postgres::PgPoolOptions;
 use dotenv::dotenv;
 use std::env;
+use tracing_subscriber;
 
 #[tokio::main]
 async fn main() {
     dotenv().ok();
 
-    // Default to a placeholder if not set, but this will fail connection if run
+    // Initialize structured logging
+    tracing_subscriber::fmt()
+        .with_target(true)
+        .with_level(true)
+        .with_thread_ids(false)
+        .init();
+
     let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
 
     let pool = PgPoolOptions::new()
@@ -46,6 +53,6 @@ async fn main() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:3000")
         .await
         .unwrap();
-    println!("listening on {}", listener.local_addr().unwrap());
+    tracing::info!("Listening on {}", listener.local_addr().unwrap());
     axum::serve(listener, app).await.unwrap();
 }
