@@ -27,9 +27,8 @@ class SocketService {
   void _initConnection() {
     if (_username == null) return;
 
-    // Using localhost for web/desktop.
     // If testing on Android Emulator, use 'ws://10.0.2.2:3000/ws'
-    final uri = Uri.parse('ws://127.0.0.1:3000/ws');
+    final uri = Uri.parse('ws://lmate.cdsar626.com/ws');
     _channel = WebSocketChannel.connect(uri);
     _isConnected = true;
 
