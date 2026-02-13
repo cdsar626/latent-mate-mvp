@@ -30,6 +30,8 @@ class GameProvider with ChangeNotifier {
   bool _profileUpdated = false;
   bool _isPartnerTyping = false;
   bool _initialized = false;
+  // Stores session data received before user taps a match (from matchmaking flow)
+  final Map<String, Map<String, dynamic>> _pendingSessionData = {};
 
   late SocketService _socketService;
 
@@ -82,6 +84,7 @@ class GameProvider with ChangeNotifier {
   void setMatchFound(String opponent) {
     _isSearching = false;
     _gameState = GameState.lobby;
+    // DB insert is now done before MatchFound is sent, so this fetch is safe
     _socketService.sendFetchActiveMatches();
     notifyListeners();
   }
@@ -106,14 +109,21 @@ class GameProvider with ChangeNotifier {
 
   void selectMatch(ActiveMatch match) {
     _currentMatch = match;
-    _affinity = match.affinity;
-    _chatUnlocked = match.affinity >= 1;
     _messages.clear();
-    _currentQuestion = null;
     _hasAnswered = false;
     _noMoreQuestions = false;
     _isPartnerTyping = false;
     _gameState = GameState.inGame;
+
+    // Use pending session data if available (from matchmaking), otherwise use match data
+    final pending = _pendingSessionData.remove(match.id);
+    if (pending != null) {
+      _affinity = pending['affinity'] as int;
+      _chatUnlocked = pending['chat_unlocked'] as bool;
+    } else {
+      _affinity = match.affinity;
+      _chatUnlocked = false; // Wait for server's SessionJoined
+    }
 
     // Request session join and history from server
     _socketService.sendJoinSession(match.id);
@@ -124,9 +134,16 @@ class GameProvider with ChangeNotifier {
 
   void setSessionJoined(String matchId, int affinity, bool chatUnlocked) {
     if (_currentMatch?.id == matchId) {
+      // Currently viewing this match — update directly
       _affinity = affinity;
       _chatUnlocked = chatUnlocked;
       notifyListeners();
+    } else {
+      // Not viewing this match yet — store for when user taps it
+      _pendingSessionData[matchId] = {
+        'affinity': affinity,
+        'chat_unlocked': chatUnlocked,
+      };
     }
   }
 

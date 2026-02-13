@@ -904,17 +904,34 @@ fn try_match_from_queue(state_guard: &mut crate::state::AppState, _requester_tx:
                     }
                 }
 
-                // Notify both users
+                let session_uuid = Uuid::parse_str(&session_id_str).unwrap_or_default();
+
+                // Notify both users of the match
                 if let Some(tx1) = &state_sessions_tx1 {
                     let msg = ServerMessage::MatchFound { opponent_name: user2_name.clone() };
                     let _ = tx1.send(Message::Text(serde_json::to_string(&msg).unwrap()));
+
+                    // Send SessionJoined so frontend has authoritative state
+                    let joined = ServerMessage::SessionJoined {
+                        match_id: session_uuid,
+                        affinity: 0,
+                        chat_unlocked: false,
+                    };
+                    let _ = tx1.send(Message::Text(serde_json::to_string(&joined).unwrap()));
                 }
                 if let Some(tx2) = &state_sessions_tx2 {
                     let msg = ServerMessage::MatchFound { opponent_name: user1_name.clone() };
                     let _ = tx2.send(Message::Text(serde_json::to_string(&msg).unwrap()));
+
+                    let joined = ServerMessage::SessionJoined {
+                        match_id: session_uuid,
+                        affinity: 0,
+                        chat_unlocked: false,
+                    };
+                    let _ = tx2.send(Message::Text(serde_json::to_string(&joined).unwrap()));
                 }
 
-                // Send first question
+                // Send first question to both
                 if let Some(q_json) = first_q_msg {
                     if let Some(tx1) = &state_sessions_tx1 {
                         let _ = tx1.send(Message::Text(q_json.clone()));
