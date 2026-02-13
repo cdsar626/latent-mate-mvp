@@ -56,5 +56,18 @@ cargo run
 
 ## Troubleshooting
 
--   **Connection Refused/Timeout:** Ensure you are using the "Transaction" (port 6543) or "Session" (port 5432) connection mode correctly. Supabase recommends port 6543 for serverless environments, but standard 5432 works for long-running servers like this Rust backend.
--   **SSL Errors:** If you encounter SSL errors, ensure your system has valid CA certificates. The backend uses `runtime-tokio-rustls` which relies on the system's trust store.
+### "Network is unreachable" Error
+
+If you see `error: error communicating with database: Network is unreachable`, it usually means your network cannot connect to the Supabase **IPv6** address or the **Transaction Pooler** (port 6543).
+
+**Fix 1: Use the IPv4 (Direct) Connection**
+1.  Go to **Project Settings** -> **Database**.
+2.  Uncheck "Use connection pooling" (just to see the direct URI, or look for "Direct connection").
+3.  Copy the URI which usually has port **5432** and might look like `db.ref.supabase.co`.
+4.  Update your `backend/.env` file with this string.
+
+**Fix 2: Change Port**
+Try changing the port in your connection string from `6543` to `5432`.
+
+### "Certificate Error"
+If you get SSL/TLS errors, ensure you have `openssl` installed on your system (`sudo apt install libssl-dev` on Linux). The project is configured to use `native-tls` which relies on your OS certificate store.
