@@ -1,1 +1,1 @@
-class SupabaseConfig { static const String url = ''; static const String anonKey = ''; }
+class SupabaseConfig { static const String url = 'https://myproject.supabase.co'; static const String anonKey = 'mykey'; }
