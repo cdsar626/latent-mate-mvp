@@ -56,7 +56,25 @@ class _SplashScreenState extends State<SplashScreen> {
       if (_isLogin) {
         await _authService.signIn(email, password);
       } else {
-        await _authService.signUp(email, password);
+        final response = await _authService.signUp(email, password);
+
+        // Check if email confirmation is required (session is null)
+        if (response.session == null && response.user != null) {
+           if (!mounted) return;
+           await showDialog(
+             context: context,
+             builder: (context) => AlertDialog(
+               title: const Text("Verify your email"),
+               content: Text("An email has been sent to $email. Please verify your account to log in."),
+               actions: [
+                 TextButton(onPressed: () => Navigator.pop(context), child: const Text("OK"))
+               ],
+             ),
+           );
+           // Switch to login mode so they can login after verifying
+           setState(() => _isLogin = true);
+           return;
+        }
       }
 
       if (!mounted) return;
@@ -76,7 +94,11 @@ class _SplashScreenState extends State<SplashScreen> {
       }
 
     } on AuthException catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      String message = e.message;
+      if (e.message.toLowerCase().contains("email not confirmed")) {
+        message = "Please confirm your email address before logging in.";
+      }
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message), backgroundColor: Colors.red));
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));
     } finally {

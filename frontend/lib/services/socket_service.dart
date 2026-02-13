@@ -53,7 +53,8 @@ class SocketService {
       'type': 'Connect',
       'payload': {
         'user_id': _authService.currentUserId ?? "unknown",
-        'username': _username
+        'username': _username,
+        'email': _authService.currentUserEmail
       }
     });
     _startHeartbeat();

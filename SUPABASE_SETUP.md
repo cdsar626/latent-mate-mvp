@@ -2,6 +2,39 @@
 
 LatentMate's backend is configured to use a PostgreSQL database, making it fully compatible with Supabase.
 
+## Environment Configuration
+
+To run the application, you must set up the following configuration variables.
+
+### Backend (`backend/.env`)
+
+Create a file named `.env` in the `backend/` directory with the following content:
+
+```env
+DATABASE_URL=postgresql://postgres.xxxx:[YOUR-PASSWORD]@aws-0-us-east-1.pooler.supabase.com:5432/postgres
+```
+
+*   **DATABASE_URL:** Your Supabase PostgreSQL Connection URI.
+    *   **Important:** Use port **5432** (Session Mode). Do NOT use port 6543 (Transaction Mode) because the backend uses prepared statements which are incompatible with transaction pooling.
+    *   Get this from **Project Settings > Database > Connection string > URI** (Uncheck "Use connection pooling").
+
+### Frontend (`frontend/lib/supabase_config.dart`)
+
+This file is pre-generated but you should verify it contains your actual Supabase project keys.
+
+```dart
+class SupabaseConfig {
+  static const String url = 'https://your-project-id.supabase.co';
+  static const String anonKey = 'your-anon-key';
+}
+```
+
+*   **url:** Your Supabase Project URL.
+*   **anonKey:** Your Supabase Project `anon` (public) API Key.
+*   Get these from **Project Settings > API**.
+
+---
+
 ## Prerequisites
 
 1.  **Supabase Account:** Sign up at [supabase.com](https://supabase.com).
@@ -11,66 +44,36 @@ LatentMate's backend is configured to use a PostgreSQL database, making it fully
     cargo install sqlx-cli --no-default-features --features native-tls,postgres
     ```
 
-## Step 1: Create a Project
+## Step-by-Step Setup
 
-1.  Log in to your Supabase dashboard.
-2.  Click "New Project".
-3.  Enter a Name (e.g., `LatentMate`) and a Database Password.
-4.  Select a Region close to you.
-5.  Click "Create new project".
-
-## Step 2: Get Connection String
-
-1.  Once the project is ready, go to **Project Settings** (cog icon) -> **Database**.
-2.  Under **Connection string**, make sure **URI** is selected.
-3.  **IMPORTANT:** Uncheck "Use connection pooling". You MUST use the **Session Mode** connection (Port **5432**) because the Rust backend (`sqlx`) uses prepared statements, which are incompatible with the Transaction Pooler (Port 6543).
-4.  Copy the connection string. It will look like this:
-    ```
-    postgresql://postgres.xxxx:[YOUR-PASSWORD]@aws-0-us-east-1.pooler.supabase.com:5432/postgres
-    ```
-5.  Replace `[YOUR-PASSWORD]` with the password you created in Step 1.
-
-## Step 3: Configure Backend
-
-1.  Navigate to the `backend/` directory in your local project.
-2.  Create or update the `.env` file:
+1.  **Create Project:** Create a new project on Supabase.
+2.  **Get Credentials:** Gather your URL, Anon Key, and Database Connection String as described above.
+3.  **Configure Backend:** Create the `backend/.env` file.
+4.  **Configure Frontend:** Update `frontend/lib/supabase_config.dart` with your keys.
+5.  **Run Migrations:**
     ```bash
-    echo "DATABASE_URL=postgresql://postgres.xxxx:password@host:5432/postgres" > .env
+    cd backend
+    sqlx migrate run
     ```
-    *(Paste your actual connection string here)*.
-
-## Step 4: Run Migrations
-
-Run the following command in the `backend/` directory to create the `users`, `matches`, and `messages` tables in your Supabase database:
-
-```bash
-sqlx migrate run
-```
-
-## Step 5: Run the Backend
-
-Start the server:
-
-```bash
-cargo run
-```
+6.  **Run Backend:**
+    ```bash
+    cargo run
+    ```
+7.  **Run Frontend:**
+    ```bash
+    cd frontend
+    flutter run
+    ```
 
 ## Troubleshooting
 
 ### "prepared statement ... already exists" (Error 42P05)
-
-If you see this error, you are likely connecting to port **6543** (Transaction Pooler). `sqlx` requires a direct session connection or a session-mode pooler.
-
-**Fix:**
-1.  Change the port in your `DATABASE_URL` from `6543` to **5432**.
-2.  If you are stuck in a bad state (tables partially created or migration failed), you can reset the database by running the SQL in `backend/reset_db.sql` via the **Supabase SQL Editor** in your dashboard. Then run `sqlx migrate run` again.
+**Fix:** Change the port in your `DATABASE_URL` from `6543` to **5432**.
 
 ### "Network is unreachable" Error
+**Fix:** Use the IPv4 (Direct) Connection string. In Supabase Database settings, uncheck "Use connection pooling" to see the direct connection string (usually port 5432).
 
-If you see `error: error communicating with database: Network is unreachable`, it usually means your network cannot connect to the Supabase **IPv6** address.
-
-**Fix:**
-Use the IPv4 (Direct) Connection string if available in Supabase settings (look for "Direct connection" or disable pooling). Ensure you are using port **5432**.
-
-### "Certificate Error"
-If you get SSL/TLS errors, ensure you have `openssl` installed on your system (`sudo apt install libssl-dev` on Linux). The project is configured to use `native-tls` which relies on your OS certificate store.
+### "Email not confirmed" on Login
+**Fix:** Supabase requires email verification by default.
+1.  Check your inbox for the confirmation link after signing up.
+2.  Or, disable "Confirm email" in Supabase Dashboard > Authentication > Providers > Email (Not recommended for production).

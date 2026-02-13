@@ -40,7 +40,7 @@ pub struct ChatMessage {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload")]
 pub enum ClientMessage {
-    Connect { user_id: String, username: String },
+    Connect { user_id: String, username: String, email: Option<String> },
     UpdateProfile { bio: String, tags: Vec<String>, avatar_config: String },
     FindMatch,
     AnswerQuestion { choice: String, comment: Option<String> }, // choice: "A" or "B"

@@ -32,4 +32,6 @@ class AuthService {
   }
 
   String? get currentUserId => currentUser?.id;
+
+  String? get currentUserEmail => currentUser?.email;
 }

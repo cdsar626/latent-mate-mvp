@@ -34,7 +34,7 @@ pub async fn handle_socket(socket: WebSocket, state: SharedState) {
                     ClientMessage::Pong => {
                         // Heartbeat ack
                     }
-                    ClientMessage::Connect { user_id: auth_user_id, username } => {
+                    ClientMessage::Connect { user_id: auth_user_id, username, email } => {
                         let db_pool = {
                             let state_guard = state.lock().unwrap();
                             state_guard.db.clone()
@@ -42,10 +42,11 @@ pub async fn handle_socket(socket: WebSocket, state: SharedState) {
 
                         // Use the ID provided by frontend (from Supabase Auth)
                         let target_uuid = Uuid::parse_str(&auth_user_id).unwrap_or(Uuid::new_v4());
+                        let target_uuid_str = target_uuid.to_string();
 
-                        // Upsert logic to ensure user exists in our DB
+                        // Upsert logic to ensure user exists in our DB and store email
                         let fetch_user = sqlx::query("SELECT id, username FROM users WHERE id = $1")
-                            .bind(target_uuid.to_string())
+                            .bind(&target_uuid_str)
                             .fetch_optional(&db_pool)
                             .await;
 
@@ -53,13 +54,25 @@ pub async fn handle_socket(socket: WebSocket, state: SharedState) {
                             Ok(Some(row)) => {
                                 let id_str: String = row.get("id");
                                 let username_str: String = row.get("username");
+
+                                // Update email if provided
+                                if let Some(email_val) = email {
+                                    let _ = sqlx::query("UPDATE users SET email = $1 WHERE id = $2")
+                                        .bind(email_val)
+                                        .bind(&target_uuid_str)
+                                        .execute(&db_pool)
+                                        .await;
+                                }
+
                                 (Uuid::parse_str(&id_str).unwrap_or(target_uuid), username_str)
                             },
                             Ok(None) => {
-                                let new_id_str = target_uuid.to_string();
-                                let _ = sqlx::query("INSERT INTO users (id, username) VALUES ($1, $2)")
-                                    .bind(&new_id_str)
+                                let email_val = email.unwrap_or_default(); // Store empty string if no email, or use NULL logic if schema permits
+                                // Insert with email
+                                let _ = sqlx::query("INSERT INTO users (id, username, email) VALUES ($1, $2, $3)")
+                                    .bind(&target_uuid_str)
                                     .bind(&username)
+                                    .bind(email_val)
                                     .execute(&db_pool)
                                     .await;
                                 (target_uuid, username)
