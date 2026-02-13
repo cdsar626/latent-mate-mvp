@@ -4,7 +4,7 @@ use crate::models::{User, GameSession, Question};
 use crate::questions::get_questions;
 use tokio::sync::mpsc;
 use axum::extract::ws::Message;
-use sqlx::SqlitePool;
+use sqlx::PgPool;
 
 pub type Tx = mpsc::UnboundedSender<Message>;
 
@@ -15,11 +15,11 @@ pub struct AppState {
     pub queue: Vec<Uuid>,
     pub tx_map: HashMap<Uuid, Tx>,
     pub questions: Vec<Question>,
-    pub db: SqlitePool,
+    pub db: PgPool,
 }
 
 impl AppState {
-    pub fn new(db: SqlitePool) -> Self {
+    pub fn new(db: PgPool) -> Self {
         Self {
             users: HashMap::new(),
             sessions: HashMap::new(),

@@ -5,9 +5,11 @@ import '../providers/game_provider.dart';
 import '../models/user.dart';
 import '../models/question.dart';
 import '../models/message.dart';
+import 'auth_service.dart';
 
 class SocketService {
   final GameProvider gameProvider;
+  final AuthService _authService = AuthService();
   WebSocketChannel? _channel;
   String? _username;
   Timer? _reconnectTimer;
@@ -46,7 +48,14 @@ class SocketService {
       },
     );
 
-    _send({'type': 'Connect', 'payload': {'username': _username}});
+    // Send user_id for "authentication" / syncing with DB
+    _send({
+      'type': 'Connect',
+      'payload': {
+        'user_id': _authService.currentUserId ?? "unknown",
+        'username': _username
+      }
+    });
     _startHeartbeat();
   }
 
@@ -110,15 +119,11 @@ class SocketService {
             content: m['content'],
             isMe: m['sender_id'] == gameProvider.currentUser?.id,
           )).toList();
-          // Clear and set
-          // Ideally GameProvider should have a setMessages method, for now we can iterate
           for (var msg in parsedMsgs) {
-             // Basic deduplication check could be here
              gameProvider.addMessage(msg);
           }
           break;
         case 'Pong':
-          // Alive
           break;
         case 'Error':
           print("Server Error: ${payload['message']}");

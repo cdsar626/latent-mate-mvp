@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS users (
     bio TEXT,
     tags TEXT,
     avatar_config TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Create Matches Table
@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS matches (
     user2_id TEXT NOT NULL,
     affinity INTEGER DEFAULT 0,
     chat_unlocked BOOLEAN DEFAULT FALSE,
-    last_activity DATETIME DEFAULT CURRENT_TIMESTAMP,
+    last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY(user1_id) REFERENCES users(id),
     FOREIGN KEY(user2_id) REFERENCES users(id)
 );
@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS messages (
     match_id TEXT NOT NULL,
     sender_id TEXT NOT NULL,
     content TEXT NOT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY(match_id) REFERENCES matches(id),
     FOREIGN KEY(sender_id) REFERENCES users(id)
 );

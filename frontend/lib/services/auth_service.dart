@@ -1,21 +1,35 @@
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:uuid/uuid.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class AuthService {
-  static const String _usernameKey = 'username';
+  final SupabaseClient _supabase = Supabase.instance.client;
 
-  Future<String?> getUsername() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_usernameKey);
+  User? get currentUser => _supabase.auth.currentUser;
+
+  Future<AuthResponse> signUp(String email, String password) async {
+    return await _supabase.auth.signUp(
+      email: email,
+      password: password,
+    );
   }
 
-  Future<void> saveUsername(String username) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_usernameKey, username);
+  Future<AuthResponse> signIn(String email, String password) async {
+    return await _supabase.auth.signInWithPassword(
+      email: email,
+      password: password,
+    );
   }
 
   Future<void> logout() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_usernameKey);
+    await _supabase.auth.signOut();
   }
+
+  String? get currentUsername {
+     // For MVP, using email part as username or metadata if available
+     // Ideally we store username in user_metadata
+     final user = currentUser;
+     if (user == null) return null;
+     return user.userMetadata?['username'] ?? user.email?.split('@')[0];
+  }
+
+  String? get currentUserId => currentUser?.id;
 }

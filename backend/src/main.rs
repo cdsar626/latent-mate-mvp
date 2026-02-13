@@ -11,7 +11,7 @@ use axum::{
 use std::sync::{Arc, Mutex};
 use state::AppState;
 use handlers::ws_handler;
-use sqlx::sqlite::SqlitePoolOptions;
+use sqlx::postgres::PgPoolOptions;
 use dotenv::dotenv;
 use std::env;
 
@@ -19,15 +19,16 @@ use std::env;
 async fn main() {
     dotenv().ok();
 
-    let database_url = env::var("DATABASE_URL").unwrap_or_else(|_| "sqlite:db.sqlite".to_string());
+    // Default to a placeholder if not set, but this will fail connection if run
+    let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
 
-    let pool = SqlitePoolOptions::new()
+    let pool = PgPoolOptions::new()
         .max_connections(5)
         .connect(&database_url)
         .await
         .expect("Failed to connect to database");
 
-    // Initialize database schema (for MVP simplicity, we can run migrations here)
+    // Initialize database schema
     sqlx::migrate!("./migrations")
         .run(&pool)
         .await
