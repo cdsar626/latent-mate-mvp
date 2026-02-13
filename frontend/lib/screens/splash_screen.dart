@@ -26,7 +26,9 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   void initState() {
     super.initState();
-    _checkSession();
+    // Defer session check until after the first frame to avoid
+    // navigating while the Navigator is still locked during build.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkSession());
   }
 
   Future<void> _checkSession() async {
