@@ -166,7 +166,7 @@ pub async fn handle_socket(socket: WebSocket, state: SharedState) {
                                 info!(user_id = %uid, queue_size = state_guard.queue.len(), "User added to matchmaking queue");
 
                                 // Try to match
-                                try_match_from_queue(&mut state_guard, &tx);
+                                try_match_from_queue(&mut state_guard, &tx, state.clone());
                             }
                         }
                     }
@@ -452,6 +452,20 @@ pub async fn handle_socket(socket: WebSocket, state: SharedState) {
                                 Ok(r) if r.rows_affected() > 0 => {
                                     info!(user_id = %uid, match_id = %match_id, "Match permanently deleted (users can re-match)");
                                     let match_uuid = Uuid::parse_str(&match_id).unwrap_or_default();
+
+                                    // Clean up in-memory session (defense in depth)
+                                    {
+                                        let mut state_guard = state.lock().unwrap();
+                                        if let Some(session) = state_guard.sessions.remove(&match_uuid) {
+                                            for &sid in &session.user_ids {
+                                                if state_guard.user_sessions.get(&sid) == Some(&match_uuid) {
+                                                    state_guard.user_sessions.remove(&sid);
+                                                }
+                                            }
+                                            info!(user_id = %uid, match_id = %match_id, "Cleaned up in-memory session on delete");
+                                        }
+                                    }
+
                                     let _ = tx.send(Message::Text(serde_json::to_string(&ServerMessage::MatchDeleted { match_id: match_uuid }).unwrap()));
                                 },
                                 Ok(_) => {
@@ -504,7 +518,7 @@ pub async fn handle_socket(socket: WebSocket, state: SharedState) {
 }
 
 /// Try to match users from the queue, checking for duplicate/suppressed pairs
-fn try_match_from_queue(state_guard: &mut crate::state::AppState, _requester_tx: &mpsc::UnboundedSender<Message>) {
+fn try_match_from_queue(state_guard: &mut crate::state::AppState, _requester_tx: &mpsc::UnboundedSender<Message>, shared_state: crate::state::SharedState) {
     if state_guard.queue.len() < 2 {
         return;
     }
@@ -574,6 +588,9 @@ fn try_match_from_queue(state_guard: &mut crate::state::AppState, _requester_tx:
                 }).unwrap()
             });
 
+            let shared_state_clone = shared_state.clone();
+            let session_id_for_cleanup = session_id;
+
             tokio::spawn(async move {
                 // Check DB for existing active/suppressed match between this pair
                 let existing = sqlx::query(
@@ -593,6 +610,27 @@ fn try_match_from_queue(state_guard: &mut crate::state::AppState, _requester_tx:
                             existing_status = %existing_status,
                             "Blocked duplicate match (existing {} match in DB)", existing_status
                         );
+
+                        // Clean up the orphaned in-memory session
+                        {
+                            let mut sg = shared_state_clone.lock().unwrap();
+                            sg.sessions.remove(&session_id_for_cleanup);
+                            if let Some(uid1) = Uuid::parse_str(&user1_id_str).ok() {
+                                if sg.user_sessions.get(&uid1) == Some(&session_id_for_cleanup) {
+                                    sg.user_sessions.remove(&uid1);
+                                }
+                            }
+                            if let Some(uid2) = Uuid::parse_str(&user2_id_str).ok() {
+                                if sg.user_sessions.get(&uid2) == Some(&session_id_for_cleanup) {
+                                    sg.user_sessions.remove(&uid2);
+                                }
+                            }
+                            info!(
+                                session_id = %session_id_for_cleanup,
+                                "Cleaned up orphaned in-memory session after DB duplicate detection"
+                            );
+                        }
+
                         // Notify users the match failed
                         if let Some(tx1) = &state_sessions_tx1 {
                             let _ = tx1.send(Message::Text(serde_json::to_string(&ServerMessage::Error {
@@ -602,8 +640,6 @@ fn try_match_from_queue(state_guard: &mut crate::state::AppState, _requester_tx:
                         if let Some(tx2) = &state_sessions_tx2 {
                             let _ = tx2.send(Message::Text(serde_json::to_string(&ServerMessage::SearchingAck).unwrap()));
                         }
-                        // Note: in-memory session was already created — it will be cleaned up
-                        // when matches are next fetched, or we could send a cleanup message.
                         return;
                     },
                     Ok(None) => {
