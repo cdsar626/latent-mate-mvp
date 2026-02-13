@@ -4,7 +4,7 @@ use tokio::sync::mpsc;
 use uuid::Uuid;
 use std::collections::HashMap;
 use crate::state::SharedState;
-use crate::models::{ClientMessage, ServerMessage, User, GameSession, ActiveMatch};
+use crate::models::{ClientMessage, ServerMessage, User, GameSession, ActiveMatch, ChatMessage};
 use sqlx::Row;
 use tracing::{info, warn, error, debug};
 
@@ -37,12 +37,31 @@ pub async fn handle_socket(socket: WebSocket, state: SharedState) {
                         // Heartbeat ack
                     }
                     ClientMessage::Connect { user_id: auth_user_id, username, email } => {
+                        // Validate user_id — reject empty/invalid IDs to prevent ghost users
+                        if auth_user_id.is_empty() || auth_user_id == "unknown" || auth_user_id == "null" {
+                            warn!(raw_user_id = %auth_user_id, "Rejected Connect: invalid user_id");
+                            let _ = tx.send(Message::Text(serde_json::to_string(&ServerMessage::Error {
+                                message: "Invalid user_id: authentication required".to_string()
+                            }).unwrap()));
+                            continue;
+                        }
+
+                        let target_uuid = match Uuid::parse_str(&auth_user_id) {
+                            Ok(uuid) => uuid,
+                            Err(_) => {
+                                warn!(raw_user_id = %auth_user_id, "Rejected Connect: malformed UUID");
+                                let _ = tx.send(Message::Text(serde_json::to_string(&ServerMessage::Error {
+                                    message: "Invalid user_id: malformed UUID".to_string()
+                                }).unwrap()));
+                                continue;
+                            }
+                        };
+
                         let db_pool = {
                             let state_guard = state.lock().unwrap();
                             state_guard.db.clone()
                         };
 
-                        let target_uuid = Uuid::parse_str(&auth_user_id).unwrap_or(Uuid::new_v4());
                         let target_uuid_str = target_uuid.to_string();
 
                         let fetch_user = sqlx::query("SELECT id, username FROM users WHERE id = $1")
@@ -67,10 +86,17 @@ pub async fn handle_socket(socket: WebSocket, state: SharedState) {
                             },
                             Ok(None) => {
                                 let email_val = email.unwrap_or_default();
+                                if email_val.is_empty() {
+                                    warn!(user_id = %target_uuid, "Rejected Connect: user not in DB and no email provided (likely ghost)");
+                                    let _ = tx.send(Message::Text(serde_json::to_string(&ServerMessage::Error {
+                                        message: "User not found. Please log in again.".to_string()
+                                    }).unwrap()));
+                                    continue;
+                                }
                                 let _ = sqlx::query("INSERT INTO users (id, username, email) VALUES ($1, $2, $3)")
                                     .bind(&target_uuid_str)
                                     .bind(&username)
-                                    .bind(email_val)
+                                    .bind(&email_val)
                                     .execute(&db_pool)
                                     .await;
                                 info!(user_id = %target_uuid, username = %username, "New user created in DB");
@@ -170,8 +196,128 @@ pub async fn handle_socket(socket: WebSocket, state: SharedState) {
                             }
                         }
                     }
-                    ClientMessage::AnswerQuestion { choice, comment: _ } => {
+                    ClientMessage::JoinSession { match_id } => {
                         if let Some(uid) = user_id {
+                            info!(user_id = %uid, match_id = %match_id, "JoinSession requested");
+
+                            let match_uuid = match Uuid::parse_str(&match_id) {
+                                Ok(u) => u,
+                                Err(_) => {
+                                    let _ = tx.send(Message::Text(serde_json::to_string(&ServerMessage::Error {
+                                        message: "Invalid match_id".to_string()
+                                    }).unwrap()));
+                                    continue;
+                                }
+                            };
+
+                            // Check if session already exists in memory
+                            let session_exists = {
+                                let state_guard = state.lock().unwrap();
+                                state_guard.sessions.contains_key(&match_uuid)
+                            };
+
+                            if !session_exists {
+                                // Load from DB
+                                let db_pool = {
+                                    let state_guard = state.lock().unwrap();
+                                    state_guard.db.clone()
+                                };
+
+                                let row = sqlx::query(
+                                    "SELECT id, user1_id, user2_id, affinity, chat_unlocked FROM matches WHERE id = $1 AND (user1_id = $2 OR user2_id = $2) AND status = 'active'"
+                                )
+                                .bind(&match_id)
+                                .bind(uid.to_string())
+                                .fetch_optional(&db_pool)
+                                .await;
+
+                                match row {
+                                    Ok(Some(r)) => {
+                                        let u1_str: String = r.get("user1_id");
+                                        let u2_str: String = r.get("user2_id");
+                                        let aff: i32 = r.get("affinity");
+                                        let chat_ul: bool = r.get("chat_unlocked");
+
+                                        let u1 = Uuid::parse_str(&u1_str).unwrap_or_default();
+                                        let u2 = Uuid::parse_str(&u2_str).unwrap_or_default();
+
+                                        // Count how many questions have been answered at this affinity level
+                                        let question_index = {
+                                            let sg = state.lock().unwrap();
+                                            let _eligible_count = sg.questions.iter()
+                                                .filter(|q| q.min_affinity <= aff as u32)
+                                                .count();
+                                            // Approximate: affinity = number of matching answers, index = affinity + some offset
+                                            // For simplicity, use affinity as a lower bound for the question index
+                                            aff as usize
+                                        };
+
+                                        let session = GameSession {
+                                            id: match_uuid,
+                                            user_ids: vec![u1, u2],
+                                            affinity: aff as u32,
+                                            current_question_index: question_index,
+                                            chat_unlocked: chat_ul,
+                                            current_answers: HashMap::new(),
+                                            answered_question_ids: Vec::new(),
+                                        };
+
+                                        let mut state_guard = state.lock().unwrap();
+                                        state_guard.sessions.insert(match_uuid, session);
+                                        info!(match_id = %match_uuid, user1 = %u1, user2 = %u2, affinity = aff, "Session restored from DB");
+                                    },
+                                    Ok(None) => {
+                                        warn!(user_id = %uid, match_id = %match_id, "JoinSession: match not found or not active");
+                                        let _ = tx.send(Message::Text(serde_json::to_string(&ServerMessage::Error {
+                                            message: "Match not found or not active".to_string()
+                                        }).unwrap()));
+                                        continue;
+                                    },
+                                    Err(e) => {
+                                        error!(user_id = %uid, match_id = %match_id, error = %e, "JoinSession: DB error");
+                                        let _ = tx.send(Message::Text(serde_json::to_string(&ServerMessage::Error {
+                                            message: "Error loading session".to_string()
+                                        }).unwrap()));
+                                        continue;
+                                    }
+                                }
+                            }
+
+                            // Update user_sessions mapping
+                            let (affinity, chat_unlocked) = {
+                                let mut state_guard = state.lock().unwrap();
+                                state_guard.user_sessions.insert(uid, match_uuid);
+                                let session = state_guard.sessions.get(&match_uuid).unwrap();
+                                (session.affinity, session.chat_unlocked)
+                            };
+
+                            // Send SessionJoined
+                            let joined_msg = ServerMessage::SessionJoined {
+                                match_id: match_uuid,
+                                affinity,
+                                chat_unlocked,
+                            };
+                            let _ = tx.send(Message::Text(serde_json::to_string(&joined_msg).unwrap()));
+
+                            // Send current question
+                            {
+                                let state_guard = state.lock().unwrap();
+                                send_next_question(&state_guard, match_uuid, &[uid]);
+                            }
+
+                            info!(user_id = %uid, match_id = %match_uuid, affinity = affinity, chat_unlocked = chat_unlocked, "Session joined");
+                        }
+                    }
+                    ClientMessage::AnswerQuestion { match_id, choice, comment: _ } => {
+                        if let Some(uid) = user_id {
+                            let session_uuid = match Uuid::parse_str(&match_id) {
+                                Ok(u) => u,
+                                Err(_) => {
+                                    warn!(user_id = %uid, match_id = %match_id, "AnswerQuestion: invalid match_id");
+                                    continue;
+                                }
+                            };
+
                             let mut both_answered = false;
                             let mut session_user_ids = Vec::new();
                             let mut affinity = 0;
@@ -188,59 +334,56 @@ pub async fn handle_socket(socket: WebSocket, state: SharedState) {
                             {
                                 let mut state_guard = state.lock().unwrap();
 
-                                // Pre-compute eligible question texts to avoid borrow conflict
-                                let session_id_opt = state_guard.user_sessions.get(&uid).copied();
+                                // Get current question text before mutable borrow
+                                let q_text_for_log = {
+                                    let q_idx_pre = state_guard.sessions.get(&session_uuid)
+                                        .map(|s| s.current_question_index)
+                                        .unwrap_or(0);
+                                    let old_aff = state_guard.sessions.get(&session_uuid)
+                                        .map(|s| s.affinity)
+                                        .unwrap_or(0);
+                                    let eligible: Vec<_> = state_guard.questions.iter()
+                                        .filter(|q| q.min_affinity <= old_aff)
+                                        .collect();
+                                    eligible.get(q_idx_pre).map(|q| q.text.clone()).unwrap_or_default()
+                                };
 
-                                if let Some(session_id) = session_id_opt {
-                                    // Get current question text before mutable borrow
-                                    let q_text_for_log = {
-                                        let q_idx_pre = state_guard.sessions.get(&session_id)
-                                            .map(|s| s.current_question_index)
-                                            .unwrap_or(0);
-                                        let old_aff = state_guard.sessions.get(&session_id)
-                                            .map(|s| s.affinity)
-                                            .unwrap_or(0);
-                                        let eligible: Vec<_> = state_guard.questions.iter()
-                                            .filter(|q| q.min_affinity <= old_aff)
-                                            .collect();
-                                        eligible.get(q_idx_pre).map(|q| q.text.clone()).unwrap_or_default()
-                                    };
+                                if let Some(session) = state_guard.sessions.get_mut(&session_uuid) {
+                                    session_id_uuid = session.id;
+                                    session.current_answers.insert(uid, (choice.clone(), None));
+                                    info!(user_id = %uid, session_id = %session_uuid, choice = %choice, "User answered question");
 
-                                    if let Some(session) = state_guard.sessions.get_mut(&session_id) {
-                                        session_id_uuid = session.id;
-                                        session.current_answers.insert(uid, (choice.clone(), None));
-                                        info!(user_id = %uid, session_id = %session_id, choice = %choice, "User answered question");
+                                    if session.current_answers.len() == 2 {
+                                        both_answered = true;
+                                        session_user_ids = session.user_ids.clone();
+                                        let (u1, u2) = (session_user_ids[0], session_user_ids[1]);
+                                        user1_id_log = u1;
+                                        user2_id_log = u2;
 
-                                        if session.current_answers.len() == 2 {
-                                            both_answered = true;
-                                            session_user_ids = session.user_ids.clone();
-                                            let (u1, u2) = (session_user_ids[0], session_user_ids[1]);
-                                            user1_id_log = u1;
-                                            user2_id_log = u2;
+                                        let ans1 = session.current_answers.get(&u1).unwrap().0.clone();
+                                        let ans2 = session.current_answers.get(&u2).unwrap().0.clone();
+                                        answer1 = ans1.clone();
+                                        answer2 = ans2.clone();
 
-                                            let ans1 = session.current_answers.get(&u1).unwrap().0.clone();
-                                            let ans2 = session.current_answers.get(&u2).unwrap().0.clone();
-                                            answer1 = ans1.clone();
-                                            answer2 = ans2.clone();
-
-                                            old_affinity = session.affinity;
-                                            answers_matched = ans1 == ans2;
-                                            if answers_matched {
-                                                session.affinity += 1;
-                                            }
-                                            affinity = session.affinity;
-
-                                            if session.affinity >= 1 {
-                                                session.chat_unlocked = true;
-                                            }
-                                            chat_unlocked = session.chat_unlocked;
-
-                                            question_text = q_text_for_log;
-
-                                            session.current_question_index += 1;
-                                            session.current_answers.clear();
+                                        old_affinity = session.affinity;
+                                        answers_matched = ans1 == ans2;
+                                        if answers_matched {
+                                            session.affinity += 1;
                                         }
+                                        affinity = session.affinity;
+
+                                        if session.affinity >= 1 {
+                                            session.chat_unlocked = true;
+                                        }
+                                        chat_unlocked = session.chat_unlocked;
+
+                                        question_text = q_text_for_log;
+
+                                        session.current_question_index += 1;
+                                        session.current_answers.clear();
                                     }
+                                } else {
+                                    warn!(user_id = %uid, session_id = %session_uuid, "AnswerQuestion: session not found in memory");
                                 }
 
                                 if both_answered {
@@ -290,48 +433,113 @@ pub async fn handle_socket(socket: WebSocket, state: SharedState) {
                             }
                         }
                     }
-                    ClientMessage::SendMessage { content } => {
+                    ClientMessage::SendMessage { match_id, content } => {
                         if let Some(uid) = user_id {
+                            let session_uuid = match Uuid::parse_str(&match_id) {
+                                Ok(u) => u,
+                                Err(_) => {
+                                    warn!(user_id = %uid, match_id = %match_id, "SendMessage: invalid match_id");
+                                    continue;
+                                }
+                            };
+
                             let state_guard = state.lock().unwrap();
-                            if let Some(&session_id) = state_guard.user_sessions.get(&uid) {
-                                if let Some(session) = state_guard.sessions.get(&session_id) {
-                                    if session.chat_unlocked {
-                                        let db_pool = state_guard.db.clone();
-                                        let msg_id = Uuid::new_v4();
-                                        let content_clone = content.clone();
-                                        let session_id_str = session.id.to_string();
-                                        let sender_id_str = uid.to_string();
-                                        let msg_id_str = msg_id.to_string();
+                            if let Some(session) = state_guard.sessions.get(&session_uuid) {
+                                if session.chat_unlocked {
+                                    let db_pool = state_guard.db.clone();
+                                    let msg_id = Uuid::new_v4();
+                                    let content_clone = content.clone();
+                                    let session_id_str = session.id.to_string();
+                                    let sender_id_str = uid.to_string();
+                                    let msg_id_str = msg_id.to_string();
+                                    let now = chrono::Utc::now().to_rfc3339();
 
-                                        tokio::spawn(async move {
-                                            let _ = sqlx::query("INSERT INTO messages (id, match_id, sender_id, content) VALUES ($1, $2, $3, $4)")
-                                                .bind(msg_id_str)
-                                                .bind(&session_id_str)
-                                                .bind(sender_id_str)
-                                                .bind(content_clone)
-                                                .execute(&db_pool)
-                                                .await;
-                                            let _ = sqlx::query("UPDATE matches SET last_activity = CURRENT_TIMESTAMP WHERE id = $1")
-                                                .bind(&session_id_str)
-                                                .execute(&db_pool)
-                                                .await;
-                                        });
+                                    let _now_clone = now.clone();
+                                    let msg_id_str_clone = msg_id_str.clone();
+                                    tokio::spawn(async move {
+                                        let _ = sqlx::query("INSERT INTO messages (id, match_id, sender_id, content) VALUES ($1, $2, $3, $4)")
+                                            .bind(msg_id_str_clone)
+                                            .bind(&session_id_str)
+                                            .bind(sender_id_str)
+                                            .bind(content_clone)
+                                            .execute(&db_pool)
+                                            .await;
+                                        let _ = sqlx::query("UPDATE matches SET last_activity = CURRENT_TIMESTAMP WHERE id = $1")
+                                            .bind(&session_id_str)
+                                            .execute(&db_pool)
+                                            .await;
+                                    });
 
-                                        for &other_uid in &session.user_ids {
-                                            if other_uid != uid {
-                                                if let Some(tx) = state_guard.tx_map.get(&other_uid) {
-                                                    let msg = ServerMessage::ChatMessage {
-                                                        sender_id: uid,
-                                                        content: content.clone(),
-                                                    };
-                                                    let _ = tx.send(Message::Text(serde_json::to_string(&msg).unwrap()));
-                                                }
+                                    for &other_uid in &session.user_ids {
+                                        if other_uid != uid {
+                                            if let Some(tx) = state_guard.tx_map.get(&other_uid) {
+                                                let msg = ServerMessage::ChatMessage {
+                                                    id: msg_id_str.clone(),
+                                                    sender_id: uid,
+                                                    content: content.clone(),
+                                                    timestamp: now.clone(),
+                                                };
+                                                let _ = tx.send(Message::Text(serde_json::to_string(&msg).unwrap()));
                                             }
                                         }
-                                        debug!(user_id = %uid, session_id = %session_id, "Chat message sent");
-                                    } else {
-                                        warn!(user_id = %uid, session_id = %session_id, "Attempted to send message with chat locked");
                                     }
+
+                                    // Echo back to sender with id and timestamp
+                                    let echo = ServerMessage::ChatMessage {
+                                        id: msg_id_str,
+                                        sender_id: uid,
+                                        content,
+                                        timestamp: now,
+                                    };
+                                    let _ = tx.send(Message::Text(serde_json::to_string(&echo).unwrap()));
+
+                                    debug!(user_id = %uid, session_id = %session_uuid, "Chat message sent");
+                                } else {
+                                    warn!(user_id = %uid, session_id = %session_uuid, "Attempted to send message with chat locked");
+                                }
+                            } else {
+                                warn!(user_id = %uid, match_id = %match_id, "SendMessage: session not found");
+                            }
+                        }
+                    }
+                    ClientMessage::FetchHistory { match_id } => {
+                        if let Some(uid) = user_id {
+                            info!(user_id = %uid, match_id = %match_id, "FetchHistory requested");
+
+                            let db_pool = {
+                                let state_guard = state.lock().unwrap();
+                                state_guard.db.clone()
+                            };
+
+                            let rows = sqlx::query(
+                                "SELECT id, sender_id, content, created_at FROM messages WHERE match_id = $1 ORDER BY created_at ASC LIMIT 200"
+                            )
+                            .bind(&match_id)
+                            .fetch_all(&db_pool)
+                            .await;
+
+                            match rows {
+                                Ok(records) => {
+                                    let messages: Vec<ChatMessage> = records.iter().map(|r| {
+                                        let id_str: String = r.get("id");
+                                        let sid: String = r.get("sender_id");
+                                        let content: String = r.get("content");
+                                        let created: chrono::NaiveDateTime = r.get("created_at");
+                                        ChatMessage {
+                                            id: id_str,
+                                            sender_id: Uuid::parse_str(&sid).unwrap_or_default(),
+                                            content,
+                                            timestamp: created.and_utc().to_rfc3339(),
+                                        }
+                                    }).collect();
+
+                                    info!(user_id = %uid, match_id = %match_id, message_count = messages.len(), "History fetched");
+
+                                    let msg = ServerMessage::History { messages };
+                                    let _ = tx.send(Message::Text(serde_json::to_string(&msg).unwrap()));
+                                },
+                                Err(e) => {
+                                    error!(user_id = %uid, match_id = %match_id, error = %e, "Error fetching history");
                                 }
                             }
                         }
@@ -480,9 +688,41 @@ pub async fn handle_socket(socket: WebSocket, state: SharedState) {
                             }
                         }
                     }
-                    ClientMessage::FetchHistory => {
-                        // TODO: Implement with match_id parameter for per-match history
-                        debug!(user_id = ?user_id, "FetchHistory called (not yet implemented with match_id)");
+                    ClientMessage::Typing { match_id } => {
+                        if let Some(uid) = user_id {
+                            let match_uuid = match Uuid::parse_str(&match_id) {
+                                Ok(u) => u,
+                                Err(_) => continue,
+                            };
+                            let state_guard = state.lock().unwrap();
+                            if let Some(session) = state_guard.sessions.get(&match_uuid) {
+                                for &other_uid in &session.user_ids {
+                                    if other_uid != uid {
+                                        if let Some(ptx) = state_guard.tx_map.get(&other_uid) {
+                                            let _ = ptx.send(Message::Text(serde_json::to_string(&ServerMessage::PartnerTyping { match_id: match_uuid }).unwrap()));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    ClientMessage::StopTyping { match_id } => {
+                        if let Some(uid) = user_id {
+                            let match_uuid = match Uuid::parse_str(&match_id) {
+                                Ok(u) => u,
+                                Err(_) => continue,
+                            };
+                            let state_guard = state.lock().unwrap();
+                            if let Some(session) = state_guard.sessions.get(&match_uuid) {
+                                for &other_uid in &session.user_ids {
+                                    if other_uid != uid {
+                                        if let Some(ptx) = state_guard.tx_map.get(&other_uid) {
+                                            let _ = ptx.send(Message::Text(serde_json::to_string(&ServerMessage::PartnerStopTyping { match_id: match_uuid }).unwrap()));
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -540,11 +780,6 @@ fn try_match_from_queue(state_guard: &mut crate::state::AppState, _requester_tx:
                 info!(user1_id = %user1_id, user2_id = %user2_id, "Skipping pair: already have active in-memory session");
                 continue;
             }
-
-            // We'll do the DB check asynchronously after creating — but for the MVP, 
-            // we do a synchronous check via the in-memory sessions.
-            // The full DB check for suppressed matches happens asynchronously (see below).
-            // For now, proceed with this pair and do a DB insert that will be validated.
 
             // Remove both from queue
             state_guard.queue.retain(|&id| id != user1_id && id != user2_id);

@@ -113,6 +113,8 @@ class _HomeScreenState extends State<HomeScreen> {
           IconButton(
             icon: const Icon(Icons.logout, color: Colors.grey),
             onPressed: () async {
+              final gp = Provider.of<GameProvider>(context, listen: false);
+              gp.disconnect(); // Tear down WS first to prevent ghost reconnects
               await _authService.logout();
               if (mounted) {
                 Navigator.of(context).pushReplacement(

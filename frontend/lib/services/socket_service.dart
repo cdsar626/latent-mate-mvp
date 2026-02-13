@@ -16,16 +16,25 @@ class SocketService {
   Timer? _reconnectTimer;
   Timer? _pingTimer;
   bool _isConnected = false;
+  bool _disposed = false;
 
   SocketService(this.gameProvider);
 
   void connect(String username) {
     _username = username;
+    _disposed = false;
     _initConnection();
   }
 
   void _initConnection() {
+    if (_disposed) return;
     if (_username == null) return;
+
+    // Don't reconnect if user is no longer authenticated
+    if (_authService.currentUserId == null) {
+      print("SocketService: skipping connect — no authenticated user");
+      return;
+    }
 
     // If testing on Android Emulator, use 'ws://10.0.2.2:3000/ws'
     final uri = Uri.parse('ws://lmate.cdsar626.com/ws');
@@ -52,7 +61,7 @@ class SocketService {
     _send({
       'type': 'Connect',
       'payload': {
-        'user_id': _authService.currentUserId ?? "unknown",
+        'user_id': _authService.currentUserId ?? "",
         'username': _username,
         'email': _authService.currentUserEmail
       }
@@ -62,10 +71,18 @@ class SocketService {
 
   void _scheduleReconnect() {
     _pingTimer?.cancel();
+    if (_disposed) return;
     if (_reconnectTimer?.isActive ?? false) return;
+
+    // Don't reconnect if user is no longer authenticated
+    if (_authService.currentUserId == null) {
+      print("SocketService: skipping reconnect — user logged out");
+      return;
+    }
 
     print("Scheduling reconnect in 3 seconds...");
     _reconnectTimer = Timer(const Duration(seconds: 3), () {
+      if (_disposed) return;
       print("Attempting reconnect...");
       _initConnection();
     });
@@ -74,7 +91,7 @@ class SocketService {
   void _startHeartbeat() {
     _pingTimer?.cancel();
     _pingTimer = Timer.periodic(const Duration(seconds: 10), (timer) {
-      if (_isConnected) {
+      if (_isConnected && !_disposed) {
         _send({'type': 'Ping', 'payload': null});
       }
     });
@@ -101,6 +118,13 @@ class SocketService {
           gameProvider.setSearching(false);
           gameProvider.setMatchFound(payload['opponent_name']);
           break;
+        case 'SessionJoined':
+          gameProvider.setSessionJoined(
+            payload['match_id'],
+            payload['affinity'],
+            payload['unlocked'] ?? payload['chat_unlocked'] ?? false,
+          );
+          break;
         case 'ActiveMatches':
           final List<dynamic> matches = payload['matches'];
           final List<ActiveMatch> parsed = matches.map((m) => ActiveMatch.fromJson(m)).toList();
@@ -125,23 +149,23 @@ class SocketService {
           gameProvider.updateAffinity(payload['score'], payload['unlocked']);
           break;
         case 'ChatMessage':
-          final msg = ChatMessage(
-            senderId: payload['sender_id'],
-            content: payload['content'],
-            isMe: false,
-          );
-          gameProvider.addMessage(msg);
+          final currentUserId = gameProvider.currentUser?.id ?? '';
+          final msg = ChatMessage.fromJson(payload, currentUserId);
+          // Don't add if it's our own echoed message (we already added it locally)
+          if (!msg.isMe) {
+            gameProvider.addMessage(msg);
+          } else {
+            // Update local message with server-assigned id and timestamp
+            gameProvider.confirmMessage(msg);
+          }
           break;
         case 'History':
+          final currentUserId = gameProvider.currentUser?.id ?? '';
           final List<dynamic> msgs = payload['messages'];
-          final List<ChatMessage> parsedMsgs = msgs.map((m) => ChatMessage(
-            senderId: m['sender_id'],
-            content: m['content'],
-            isMe: m['sender_id'] == gameProvider.currentUser?.id,
-          )).toList();
-          for (var msg in parsedMsgs) {
-             gameProvider.addMessage(msg);
-          }
+          final List<ChatMessage> parsedMsgs = msgs.map((m) =>
+            ChatMessage.fromJson(m as Map<String, dynamic>, currentUserId)
+          ).toList();
+          gameProvider.setHistory(parsedMsgs);
           break;
         case 'UserProfile':
           gameProvider.setViewedProfile(payload);
@@ -154,6 +178,12 @@ class SocketService {
           break;
         case 'MatchDeleted':
           gameProvider.onMatchDeleted(payload['match_id']);
+          break;
+        case 'PartnerTyping':
+          gameProvider.setPartnerTyping(payload['match_id'], true);
+          break;
+        case 'PartnerStopTyping':
+          gameProvider.setPartnerTyping(payload['match_id'], false);
           break;
         case 'Pong':
           break;
@@ -171,17 +201,24 @@ class SocketService {
     _send({'type': 'FindMatch', 'payload': null});
   }
 
-  void sendAnswer(String choice) {
+  void sendJoinSession(String matchId) {
     _send({
-      'type': 'AnswerQuestion',
-      'payload': {'choice': choice, 'comment': null}
+      'type': 'JoinSession',
+      'payload': {'match_id': matchId}
     });
   }
 
-  void sendMessage(String content) {
+  void sendAnswer(String matchId, String choice) {
+    _send({
+      'type': 'AnswerQuestion',
+      'payload': {'match_id': matchId, 'choice': choice, 'comment': null}
+    });
+  }
+
+  void sendMessage(String matchId, String content) {
     _send({
       'type': 'SendMessage',
-      'payload': {'content': content}
+      'payload': {'match_id': matchId, 'content': content}
     });
   }
 
@@ -196,8 +233,11 @@ class SocketService {
     });
   }
 
-  void sendFetchHistory() {
-    _send({'type': 'FetchHistory', 'payload': null});
+  void sendFetchHistory(String matchId) {
+    _send({
+      'type': 'FetchHistory',
+      'payload': {'match_id': matchId}
+    });
   }
 
   void sendFetchActiveMatches() {
@@ -229,15 +269,31 @@ class SocketService {
     });
   }
 
+  void sendTyping(String matchId) {
+    _send({
+      'type': 'Typing',
+      'payload': {'match_id': matchId}
+    });
+  }
+
+  void sendStopTyping(String matchId) {
+    _send({
+      'type': 'StopTyping',
+      'payload': {'match_id': matchId}
+    });
+  }
+
   void _send(Map<String, dynamic> data) {
-    if (_channel != null && _isConnected) {
+    if (_channel != null && _isConnected && !_disposed) {
       _channel!.sink.add(jsonEncode(data));
     }
   }
 
   void dispose() {
+    _disposed = true;
     _reconnectTimer?.cancel();
     _pingTimer?.cancel();
     _channel?.sink.close();
+    _isConnected = false;
   }
 }

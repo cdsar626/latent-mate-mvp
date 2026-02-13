@@ -28,6 +28,8 @@ class GameProvider with ChangeNotifier {
   bool _noMoreQuestions = false;
   Map<String, dynamic>? _viewedProfile;
   bool _profileUpdated = false;
+  bool _isPartnerTyping = false;
+  bool _initialized = false;
 
   late SocketService _socketService;
 
@@ -45,10 +47,13 @@ class GameProvider with ChangeNotifier {
   bool get noMoreQuestions => _noMoreQuestions;
   Map<String, dynamic>? get viewedProfile => _viewedProfile;
   bool get profileUpdated => _profileUpdated;
+  bool get isPartnerTyping => _isPartnerTyping;
 
   void init(String username) {
-     _socketService = SocketService(this);
-     _socketService.connect(username);
+    if (_initialized) return;
+    _initialized = true;
+    _socketService = SocketService(this);
+    _socketService.connect(username);
   }
 
   void setConnected(User user) {
@@ -107,8 +112,22 @@ class GameProvider with ChangeNotifier {
     _currentQuestion = null;
     _hasAnswered = false;
     _noMoreQuestions = false;
+    _isPartnerTyping = false;
     _gameState = GameState.inGame;
+
+    // Request session join and history from server
+    _socketService.sendJoinSession(match.id);
+    _socketService.sendFetchHistory(match.id);
+
     notifyListeners();
+  }
+
+  void setSessionJoined(String matchId, int affinity, bool chatUnlocked) {
+    if (_currentMatch?.id == matchId) {
+      _affinity = affinity;
+      _chatUnlocked = chatUnlocked;
+      notifyListeners();
+    }
   }
 
   void clearSelection() {
@@ -116,6 +135,7 @@ class GameProvider with ChangeNotifier {
     _currentQuestion = null;
     _hasAnswered = false;
     _noMoreQuestions = false;
+    _isPartnerTyping = false;
     _messages.clear();
     _gameState = GameState.lobby;
     _socketService.sendFetchActiveMatches();
@@ -136,8 +156,9 @@ class GameProvider with ChangeNotifier {
   }
 
   void answerQuestion(String choice) {
+    if (_currentMatch == null) return;
     _hasAnswered = true;
-    _socketService.sendAnswer(choice);
+    _socketService.sendAnswer(_currentMatch!.id, choice);
     notifyListeners();
   }
 
@@ -152,13 +173,54 @@ class GameProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  void setHistory(List<ChatMessage> msgs) {
+    _messages.clear();
+    _messages.addAll(msgs);
+    notifyListeners();
+  }
+
+  void confirmMessage(ChatMessage serverMsg) {
+    // Update the locally-added message with server-assigned id/timestamp
+    // Find the last message from this sender without an id
+    for (int i = _messages.length - 1; i >= 0; i--) {
+      if (_messages[i].isMe && _messages[i].id == null) {
+        _messages[i] = serverMsg;
+        notifyListeners();
+        return;
+      }
+    }
+  }
+
   void sendMessage(String content) {
-    if (_chatUnlocked) {
-        _socketService.sendMessage(content);
-        if (_currentUser != null) {
-          _messages.add(ChatMessage(senderId: _currentUser!.id, content: content, isMe: true));
-          notifyListeners();
-        }
+    if (_chatUnlocked && _currentMatch != null) {
+      // Add locally first for instant feedback
+      _messages.add(ChatMessage(
+        senderId: _currentUser?.id ?? '',
+        content: content,
+        isMe: true,
+        timestamp: DateTime.now(),
+      ));
+      _socketService.sendMessage(_currentMatch!.id, content);
+      notifyListeners();
+    }
+  }
+
+  void setPartnerTyping(String matchId, bool isTyping) {
+    if (_currentMatch?.id == matchId) {
+      _isPartnerTyping = isTyping;
+      notifyListeners();
+    }
+  }
+
+  void sendTyping() {
+    if (_currentMatch != null) {
+      _socketService.sendTyping(_currentMatch!.id);
+    }
+  }
+
+  void sendStopTyping() {
+    if (_currentMatch != null) {
+      _socketService.sendStopTyping(_currentMatch!.id);
     }
   }
 
@@ -204,6 +266,23 @@ class GameProvider with ChangeNotifier {
   void onMatchDeleted(String matchId) {
     _archivedMatches.removeWhere((m) => m.id == matchId);
     _socketService.sendFetchArchivedMatches();
+    notifyListeners();
+  }
+
+  void disconnect() {
+    _socketService.dispose();
+    _initialized = false;
+    _currentUser = null;
+    _currentMatch = null;
+    _activeMatches = [];
+    _archivedMatches = [];
+    _messages.clear();
+    _gameState = GameState.connecting;
+    _currentQuestion = null;
+    _hasAnswered = false;
+    _isSearching = false;
+    _noMoreQuestions = false;
+    _isPartnerTyping = false;
     notifyListeners();
   }
 
