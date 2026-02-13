@@ -45,5 +45,9 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Used to take photos for your profile or chat.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Used to select photos for your profile or chat.</string>
 </dict>
 </plist>

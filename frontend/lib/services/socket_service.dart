@@ -5,6 +5,7 @@ import '../providers/game_provider.dart';
 import '../models/user.dart';
 import '../models/question.dart';
 import '../models/message.dart';
+import '../models/active_match.dart';
 import 'auth_service.dart';
 
 class SocketService {
@@ -98,6 +99,16 @@ class SocketService {
         case 'MatchFound':
           gameProvider.setMatchFound(payload['opponent_name']);
           break;
+        case 'ActiveMatches':
+          final List<dynamic> matches = payload['matches'];
+          final List<ActiveMatch> parsed = matches.map((m) => ActiveMatch.fromJson(m)).toList();
+          gameProvider.setActiveMatches(parsed);
+          break;
+        case 'UserStatus':
+          // Optional: Update specific user online status in the list locally
+          // For MVP, just refreshing matches is easier if status changes often
+          sendFetchActiveMatches();
+          break;
         case 'Question':
           final question = Question.fromJson(payload);
           gameProvider.setQuestion(question);
@@ -166,6 +177,10 @@ class SocketService {
 
   void sendFetchHistory() {
     _send({'type': 'FetchHistory', 'payload': null});
+  }
+
+  void sendFetchActiveMatches() {
+    _send({'type': 'FetchActiveMatches', 'payload': null});
   }
 
   void _send(Map<String, dynamic> data) {

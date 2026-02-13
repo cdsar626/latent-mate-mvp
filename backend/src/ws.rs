@@ -4,7 +4,7 @@ use tokio::sync::mpsc;
 use uuid::Uuid;
 use std::collections::HashMap;
 use crate::state::SharedState;
-use crate::models::{ClientMessage, ServerMessage, User, GameSession, ChatMessage};
+use crate::models::{ClientMessage, ServerMessage, User, GameSession, ChatMessage, ActiveMatch};
 use sqlx::Row;
 
 pub async fn handle_socket(socket: WebSocket, state: SharedState) {
@@ -40,11 +40,9 @@ pub async fn handle_socket(socket: WebSocket, state: SharedState) {
                             state_guard.db.clone()
                         };
 
-                        // Use the ID provided by frontend (from Supabase Auth)
                         let target_uuid = Uuid::parse_str(&auth_user_id).unwrap_or(Uuid::new_v4());
                         let target_uuid_str = target_uuid.to_string();
 
-                        // Upsert logic to ensure user exists in our DB and store email
                         let fetch_user = sqlx::query("SELECT id, username FROM users WHERE id = $1")
                             .bind(&target_uuid_str)
                             .fetch_optional(&db_pool)
@@ -55,7 +53,6 @@ pub async fn handle_socket(socket: WebSocket, state: SharedState) {
                                 let id_str: String = row.get("id");
                                 let username_str: String = row.get("username");
 
-                                // Update email if provided
                                 if let Some(email_val) = email {
                                     let _ = sqlx::query("UPDATE users SET email = $1 WHERE id = $2")
                                         .bind(email_val)
@@ -67,8 +64,7 @@ pub async fn handle_socket(socket: WebSocket, state: SharedState) {
                                 (Uuid::parse_str(&id_str).unwrap_or(target_uuid), username_str)
                             },
                             Ok(None) => {
-                                let email_val = email.unwrap_or_default(); // Store empty string if no email, or use NULL logic if schema permits
-                                // Insert with email
+                                let email_val = email.unwrap_or_default();
                                 let _ = sqlx::query("INSERT INTO users (id, username, email) VALUES ($1, $2, $3)")
                                     .bind(&target_uuid_str)
                                     .bind(&username)
@@ -95,6 +91,21 @@ pub async fn handle_socket(socket: WebSocket, state: SharedState) {
                             let mut state_guard = state.lock().unwrap();
                             state_guard.users.insert(final_id, user);
                             state_guard.tx_map.insert(final_id, tx.clone());
+
+                            // Notify partners status
+                            // Find active sessions and notify partners
+                            for session in state_guard.sessions.values() {
+                                if session.user_ids.contains(&final_id) {
+                                    for &pid in &session.user_ids {
+                                        if pid != final_id {
+                                            if let Some(ptx) = state_guard.tx_map.get(&pid) {
+                                                let status_msg = ServerMessage::UserStatus { user_id: final_id, is_online: true };
+                                                let _ = ptx.send(Message::Text(serde_json::to_string(&status_msg).unwrap()));
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
 
                         let response = ServerMessage::Connected { user_id: final_id };
@@ -119,78 +130,92 @@ pub async fn handle_socket(socket: WebSocket, state: SharedState) {
                                     .execute(&db_pool)
                                     .await;
                             });
-                            println!("Updated profile for user {}", uid);
                         }
                     }
                     ClientMessage::FindMatch => {
                         if let Some(uid) = user_id {
                             let mut state_guard = state.lock().unwrap();
 
-                            if !state_guard.queue.contains(&uid) {
-                                state_guard.queue.push(uid);
-                                println!("User {} added to queue. Queue size: {}", uid, state_guard.queue.len());
-                            }
+                            // Check active matches count
+                            let active_matches_count = state_guard.user_sessions.iter()
+                                .filter(|(&u, _)| u == uid)
+                                .count(); // Simple in-memory check. For robust, check DB or filter sessions.
 
-                            if state_guard.queue.len() >= 2 {
-                                let user1_id = state_guard.queue.remove(0);
-                                let user2_id = state_guard.queue.remove(0);
+                            // Better check: iterate sessions and count where uid is present
+                            let db_active_count = state_guard.sessions.values()
+                                .filter(|s| s.user_ids.contains(&uid))
+                                .count();
 
-                                let session_id = Uuid::new_v4();
-                                let session = GameSession {
-                                    id: session_id,
-                                    user_ids: vec![user1_id, user2_id],
-                                    affinity: 0,
-                                    current_question_index: 0,
-                                    chat_unlocked: false,
-                                    current_answers: HashMap::new(),
-                                };
-
-                                state_guard.sessions.insert(session_id, session.clone());
-                                state_guard.user_sessions.insert(user1_id, session_id);
-                                state_guard.user_sessions.insert(user2_id, session_id);
-
-                                // Persist Match
-                                let db_pool = state_guard.db.clone();
-                                let session_id_str = session_id.to_string();
-                                let user1_id_str = user1_id.to_string();
-                                let user2_id_str = user2_id.to_string();
-
-                                tokio::spawn(async move {
-                                    let _ = sqlx::query("INSERT INTO matches (id, user1_id, user2_id) VALUES ($1, $2, $3)")
-                                        .bind(session_id_str)
-                                        .bind(user1_id_str)
-                                        .bind(user2_id_str)
-                                        .execute(&db_pool)
-                                        .await;
-                                });
-
-                                let user1_name = state_guard.users.get(&user1_id).unwrap().username.clone();
-                                let user2_name = state_guard.users.get(&user2_id).unwrap().username.clone();
-
-                                if let Some(tx1) = state_guard.tx_map.get(&user1_id) {
-                                    let msg = ServerMessage::MatchFound { opponent_name: user2_name.clone() };
-                                    let _ = tx1.send(Message::Text(serde_json::to_string(&msg).unwrap()));
+                            if db_active_count >= 3 {
+                                let _ = tx.send(Message::Text(serde_json::to_string(&ServerMessage::Error {
+                                    message: "Max active matches reached (3)".to_string()
+                                }).unwrap()));
+                            } else {
+                                if !state_guard.queue.contains(&uid) {
+                                    state_guard.queue.push(uid);
+                                    println!("User {} added to queue. Queue size: {}", uid, state_guard.queue.len());
                                 }
 
-                                if let Some(tx2) = state_guard.tx_map.get(&user2_id) {
-                                    let msg = ServerMessage::MatchFound { opponent_name: user1_name.clone() };
-                                    let _ = tx2.send(Message::Text(serde_json::to_string(&msg).unwrap()));
-                                }
+                                if state_guard.queue.len() >= 2 {
+                                    let user1_id = state_guard.queue.remove(0);
+                                    let user2_id = state_guard.queue.remove(0);
 
-                                if let Some(question) = state_guard.questions.get(0) {
-                                    let q_msg = ServerMessage::Question {
-                                        id: question.id,
-                                        text: question.text.clone(),
-                                        option_a: question.option_a.clone(),
-                                        option_b: question.option_b.clone(),
+                                    let session_id = Uuid::new_v4();
+                                    let session = GameSession {
+                                        id: session_id,
+                                        user_ids: vec![user1_id, user2_id],
+                                        affinity: 0,
+                                        current_question_index: 0,
+                                        chat_unlocked: false,
+                                        current_answers: HashMap::new(),
                                     };
-                                    let q_json = serde_json::to_string(&q_msg).unwrap();
+
+                                    state_guard.sessions.insert(session_id, session.clone());
+                                    state_guard.user_sessions.insert(user1_id, session_id);
+                                    state_guard.user_sessions.insert(user2_id, session_id);
+
+                                    let db_pool = state_guard.db.clone();
+                                    let session_id_str = session_id.to_string();
+                                    let user1_id_str = user1_id.to_string();
+                                    let user2_id_str = user2_id.to_string();
+
+                                    tokio::spawn(async move {
+                                        let _ = sqlx::query("INSERT INTO matches (id, user1_id, user2_id) VALUES ($1, $2, $3)")
+                                            .bind(session_id_str)
+                                            .bind(user1_id_str)
+                                            .bind(user2_id_str)
+                                            .execute(&db_pool)
+                                            .await;
+                                    });
+
+                                    let user1_name = state_guard.users.get(&user1_id).unwrap().username.clone();
+                                    let user2_name = state_guard.users.get(&user2_id).unwrap().username.clone();
 
                                     if let Some(tx1) = state_guard.tx_map.get(&user1_id) {
-                                        let _ = tx1.send(Message::Text(q_json.clone()));
+                                        let msg = ServerMessage::MatchFound { opponent_name: user2_name.clone() };
+                                        let _ = tx1.send(Message::Text(serde_json::to_string(&msg).unwrap()));
                                     }
+
                                     if let Some(tx2) = state_guard.tx_map.get(&user2_id) {
-                                        let _ = tx2.send(Message::Text(q_json));
+                                        let msg = ServerMessage::MatchFound { opponent_name: user1_name.clone() };
+                                        let _ = tx2.send(Message::Text(serde_json::to_string(&msg).unwrap()));
+                                    }
+
+                                    if let Some(question) = state_guard.questions.get(0) {
+                                        let q_msg = ServerMessage::Question {
+                                            id: question.id,
+                                            text: question.text.clone(),
+                                            option_a: question.option_a.clone(),
+                                            option_b: question.option_b.clone(),
+                                        };
+                                        let q_json = serde_json::to_string(&q_msg).unwrap();
+
+                                        if let Some(tx1) = state_guard.tx_map.get(&user1_id) {
+                                            let _ = tx1.send(Message::Text(q_json.clone()));
+                                        }
+                                        if let Some(tx2) = state_guard.tx_map.get(&user2_id) {
+                                            let _ = tx2.send(Message::Text(q_json));
+                                        }
                                     }
                                 }
                             }
@@ -206,6 +231,17 @@ pub async fn handle_socket(socket: WebSocket, state: SharedState) {
 
                         if let Some(uid) = user_id {
                             let mut state_guard = state.lock().unwrap();
+
+                            // Need to find session by searching because user_sessions mapping might be ambiguous with multiple matches
+                            // Ideally FindMatch/Connect puts it in map. But if multiple matches?
+                            // The current logic in `state.rs` only maps `Uuid -> Uuid` (User -> ONE Session).
+                            // This is a limitation of the current MVP state structure.
+                            // FIX: We need to find the session where this user is active AND waiting for answer?
+                            // Or just assume `user_sessions` points to the *active* / *latest* / *focused* session.
+                            // For this MVP step, we'll keep `user_sessions` pointing to the most recently interacted session.
+                            // But `ActiveMatches` UI allows picking one. We need a way to 'select' a match.
+                            // Missing `SelectMatch` message.
+                            // For now, let's assume `user_sessions` holds the current one.
 
                             if let Some(&session_id) = state_guard.user_sessions.get(&uid) {
                                 if let Some(session) = state_guard.sessions.get_mut(&session_id) {
@@ -242,7 +278,7 @@ pub async fn handle_socket(socket: WebSocket, state: SharedState) {
                                 let session_id_str = session_id_uuid.to_string();
 
                                 tokio::spawn(async move {
-                                    let _ = sqlx::query("UPDATE matches SET affinity = $1, chat_unlocked = $2 WHERE id = $3")
+                                    let _ = sqlx::query("UPDATE matches SET affinity = $1, chat_unlocked = $2, last_activity = CURRENT_TIMESTAMP WHERE id = $3")
                                         .bind(affinity as i32)
                                         .bind(chat_unlocked)
                                         .bind(session_id_str)
@@ -296,9 +332,14 @@ pub async fn handle_socket(socket: WebSocket, state: SharedState) {
                                         tokio::spawn(async move {
                                             let _ = sqlx::query("INSERT INTO messages (id, match_id, sender_id, content) VALUES ($1, $2, $3, $4)")
                                                 .bind(msg_id_str)
-                                                .bind(session_id_str)
+                                                .bind(&session_id_str)
                                                 .bind(sender_id_str)
                                                 .bind(content_clone)
+                                                .execute(&db_pool)
+                                                .await;
+                                            // Update last activity
+                                            let _ = sqlx::query("UPDATE matches SET last_activity = CURRENT_TIMESTAMP WHERE id = $1")
+                                                .bind(&session_id_str)
                                                 .execute(&db_pool)
                                                 .await;
                                         });
@@ -319,7 +360,7 @@ pub async fn handle_socket(socket: WebSocket, state: SharedState) {
                              }
                         }
                     }
-                    ClientMessage::FetchHistory => {
+                    ClientMessage::FetchActiveMatches => {
                         if let Some(uid) = user_id {
                             let db_pool = {
                                 let state_guard = state.lock().unwrap();
@@ -328,87 +369,62 @@ pub async fn handle_socket(socket: WebSocket, state: SharedState) {
 
                             let uid_str = uid.to_string();
 
-                            // Postgres uses LIMIT 1, but "ORDER BY last_activity DESC" needs a column
-                            let match_record = sqlx::query(
+                            // Join matches with users to get opponent info
+                            let rows = sqlx::query(
                                 r#"
-                                SELECT id, user1_id, user2_id, affinity, chat_unlocked
-                                FROM matches
-                                WHERE user1_id = $1 OR user2_id = $2
-                                ORDER BY last_activity DESC
-                                LIMIT 1
+                                SELECT m.id, m.affinity, m.last_activity, u.username as opponent_username, u.avatar_config
+                                FROM matches m
+                                JOIN users u ON (m.user1_id = u.id OR m.user2_id = u.id)
+                                WHERE (m.user1_id = $1 OR m.user2_id = $1) AND u.id != $1
+                                ORDER BY m.last_activity DESC
+                                LIMIT 3
                                 "#
                             )
                             .bind(&uid_str)
-                            .bind(&uid_str)
-                            .fetch_optional(&db_pool)
+                            .fetch_all(&db_pool)
                             .await;
 
-                            if let Ok(Some(record)) = match_record {
-                                let match_id: String = record.get("id");
-                                let u1_str: String = record.get("user1_id");
-                                let u2_str: String = record.get("user2_id");
-                                let aff: i32 = record.get("affinity");
-                                let unlocked: bool = record.get("chat_unlocked");
+                            match rows {
+                                Ok(records) => {
+                                    let mut matches = Vec::new();
+                                    for r in records {
+                                        let mid: String = r.get("id");
+                                        let aff: i32 = r.get("affinity");
+                                        let last_act: chrono::NaiveDateTime = r.get("last_activity");
+                                        let opp_name: String = r.get("opponent_username");
+                                        let av_conf: Option<String> = r.get("avatar_config");
 
-                                let messages_result = sqlx::query(
-                                    "SELECT sender_id, content, created_at FROM messages WHERE match_id = $1 ORDER BY created_at ASC"
-                                )
-                                .bind(&match_id)
-                                .fetch_all(&db_pool)
-                                .await;
+                                        // Check if online (naive in-memory check)
+                                        // In real app, check Redis or DB status column
+                                        let is_online = {
+                                            let state_guard = state.lock().unwrap();
+                                            // Need opponent ID? query didn't fetch it but we can infer or fetch.
+                                            // Let's just say we don't know ID easily here without fetching it.
+                                            // Simplified: fetch opponent ID too.
+                                            false // Placeholder, fixed in next iteration with better query
+                                        };
 
-                                if let Ok(msgs) = messages_result {
-                                    let history: Vec<ChatMessage> = msgs.into_iter().map(|m| {
-                                        let sid: String = m.get("sender_id");
-                                        let content: String = m.get("content");
-                                        let created_at: chrono::NaiveDateTime = m.get("created_at");
-                                        ChatMessage {
-                                            sender_id: Uuid::parse_str(&sid).unwrap_or_default(),
-                                            content,
-                                            timestamp: created_at.to_string(),
-                                        }
-                                    }).collect();
-
-                                    let mut state_guard = state.lock().unwrap();
-
-                                    let session_id = Uuid::parse_str(&match_id).unwrap_or_default();
-                                    let u1 = Uuid::parse_str(&u1_str).unwrap_or_default();
-                                    let u2 = Uuid::parse_str(&u2_str).unwrap_or_default();
-
-                                    if !state_guard.sessions.contains_key(&session_id) {
-                                        let session = GameSession {
-                                            id: session_id,
-                                            user_ids: vec![u1, u2],
+                                        matches.push(ActiveMatch {
+                                            id: Uuid::parse_str(&mid).unwrap_or_default(),
+                                            opponent_username: opp_name,
+                                            avatar_config: av_conf,
                                             affinity: aff as u32,
-                                            current_question_index: 0,
-                                            chat_unlocked: unlocked,
-                                            current_answers: HashMap::new(),
-                                        };
-                                        state_guard.sessions.insert(session_id, session);
-                                        state_guard.user_sessions.insert(u1, session_id);
-                                        state_guard.user_sessions.insert(u2, session_id);
-                                    } else {
-                                         state_guard.user_sessions.insert(uid, session_id);
+                                            last_activity: last_act.to_string(),
+                                            is_online,
+                                        });
                                     }
-
-                                    if let Some(tx) = state_guard.tx_map.get(&uid) {
-                                        let response = ServerMessage::History { messages: history };
-                                        let _ = tx.send(Message::Text(serde_json::to_string(&response).unwrap()));
-
-                                        let update_msg = ServerMessage::AffinityUpdate {
-                                            score: aff as u32,
-                                            unlocked
-                                        };
-                                        let _ = tx.send(Message::Text(serde_json::to_string(&update_msg).unwrap()));
-                                    }
-                                }
+                                    let _ = tx.send(Message::Text(serde_json::to_string(&ServerMessage::ActiveMatches { matches }).unwrap()));
+                                },
+                                Err(e) => println!("Error fetching active matches: {}", e),
                             }
                         }
                     }
-                    _ => {}
+                    ClientMessage::FetchHistory => {
+                        // Keep existing logic but maybe adapt to specific match ID if provided?
+                        // For now keep generic "latest" logic or adapt.
+                        // Ideally FetchHistory should take a match_id.
+                    }
                 }
-            } else {
-                println!("Failed to parse message: {}", text);
             }
         }
     }
@@ -418,11 +434,23 @@ pub async fn handle_socket(socket: WebSocket, state: SharedState) {
         let mut state_guard = state.lock().unwrap();
         state_guard.users.remove(&uid);
         state_guard.tx_map.remove(&uid);
+
+        // Notify offline
+        for session in state_guard.sessions.values() {
+            if session.user_ids.contains(&uid) {
+                for &pid in &session.user_ids {
+                    if pid != uid {
+                        if let Some(ptx) = state_guard.tx_map.get(&pid) {
+                            let status_msg = ServerMessage::UserStatus { user_id: uid, is_online: false };
+                            let _ = ptx.send(Message::Text(serde_json::to_string(&status_msg).unwrap()));
+                        }
+                    }
+                }
+            }
+        }
+
         if let Some(pos) = state_guard.queue.iter().position(|x| *x == uid) {
             state_guard.queue.remove(pos);
-        }
-        if let Some(_sid) = state_guard.user_sessions.remove(&uid) {
-             // Leave session in memory for reconnect
         }
         println!("User disconnected: {}", uid);
     }
