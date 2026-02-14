@@ -25,20 +25,30 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   ];
   final List<String> _selectedTags = [];
   
+  GameProvider? _gameProvider;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-        final gp = Provider.of<GameProvider>(context, listen: false);
-        gp.fetchUserProfile(gp.currentUser?.id ?? "");
-        gp.addListener(_onProfileUpdate);
+        _gameProvider?.fetchUserProfile(_gameProvider?.currentUser?.id ?? "");
     });
   }
 
   @override
-  void dispose() {
+  void didChangeDependencies() {
+    super.didChangeDependencies();
     final gp = Provider.of<GameProvider>(context, listen: false);
-    gp.removeListener(_onProfileUpdate);
+    if (_gameProvider != gp) {
+      _gameProvider?.removeListener(_onProfileUpdate);
+      _gameProvider = gp;
+      _gameProvider!.addListener(_onProfileUpdate);
+    }
+  }
+
+  @override
+  void dispose() {
+    _gameProvider?.removeListener(_onProfileUpdate);
     _bioController.dispose();
     _tagsController.dispose();
     super.dispose();
@@ -46,7 +56,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
   void _onProfileUpdate() {
       if (!mounted) return;
-      final gp = Provider.of<GameProvider>(context, listen: false);
+      final gp = _gameProvider;
+      if (gp == null) return;
       
       // Populate if we have data and fields are empty
       if (gp.viewedProfile != null && gp.viewedProfile!['id'] == gp.currentUser?.id && _selectedTags.isEmpty && _bioController.text.isEmpty) {
