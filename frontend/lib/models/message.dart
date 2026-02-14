@@ -1,3 +1,4 @@
+class ChatMessage {
   final String? id;
   final String senderId;
   final String content;

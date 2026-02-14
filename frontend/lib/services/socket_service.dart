@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'dart:convert';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import '../providers/game_provider.dart';
@@ -32,7 +33,7 @@ class SocketService {
 
     // Don't reconnect if user is no longer authenticated
     if (_authService.currentUserId == null) {
-      print("SocketService: skipping connect — no authenticated user");
+      debugPrint("SocketService: skipping connect — no authenticated user");
       return;
     }
 
@@ -46,12 +47,12 @@ class SocketService {
         _handleMessage(message);
       },
       onError: (error) {
-        print("Socket error: $error");
+        debugPrint("Socket error: $error");
         _isConnected = false;
         _scheduleReconnect();
       },
       onDone: () {
-        print("Socket closed");
+        debugPrint("Socket closed");
         _isConnected = false;
         _scheduleReconnect();
       },
@@ -76,14 +77,14 @@ class SocketService {
 
     // Don't reconnect if user is no longer authenticated
     if (_authService.currentUserId == null) {
-      print("SocketService: skipping reconnect — user logged out");
+      debugPrint("SocketService: skipping reconnect — user logged out");
       return;
     }
 
-    print("Scheduling reconnect in 3 seconds...");
+    debugPrint("Scheduling reconnect in 3 seconds...");
     _reconnectTimer = Timer(const Duration(seconds: 3), () {
       if (_disposed) return;
-      print("Attempting reconnect...");
+      debugPrint("Attempting reconnect...");
       _initConnection();
     });
   }
@@ -188,12 +189,12 @@ class SocketService {
         case 'Pong':
           break;
         case 'Error':
-          print("Server Error: ${payload['message']}");
+          debugPrint("Server Error: ${payload['message']}");
           gameProvider.setSearching(false);
           break;
       }
     } catch (e) {
-      print("Error parsing message: $e");
+      debugPrint("Error parsing message: $e");
     }
   }
 

@@ -14,6 +14,15 @@ class EditProfileScreen extends StatefulWidget {
   State<EditProfileScreen> createState() => _EditProfileScreenState();
 }
 
+class _EditProfileScreenState extends State<EditProfileScreen> {
+  final TextEditingController _bioController = TextEditingController();
+  final TextEditingController _tagsController = TextEditingController();
+  Color _selectedColor = Colors.blue;
+  bool _isSaving = false;
+  final List<Color> _colorOptions = [
+    Colors.blue, Colors.red, Colors.green, Colors.orange,
+    Colors.purple, Colors.teal, Colors.pink, Colors.amber,
+  ];
   final List<String> _selectedTags = [];
   
   @override

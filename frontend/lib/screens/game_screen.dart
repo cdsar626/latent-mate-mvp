@@ -75,7 +75,7 @@ class GameScreen extends StatelessWidget {
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
-                  color: Colors.deepPurple.withOpacity(0.1),
+                  color: Colors.deepPurple.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Text(
@@ -200,7 +200,7 @@ class GameScreen extends StatelessWidget {
                 return ElevatedButton(
                   onPressed: () => gp.answerQuestion(option),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.deepPurple.withOpacity(0.1),
+                    backgroundColor: Colors.deepPurple.withValues(alpha: 0.1),
                     foregroundColor: Colors.deepPurple,
                     elevation: 0,
                     padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),

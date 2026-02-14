@@ -169,7 +169,7 @@ class _SplashScreenState extends State<SplashScreen> {
             decoration: InputDecoration(
               hintText: "Email",
               filled: true,
-              fillColor: Colors.white.withOpacity(0.9),
+              fillColor: Colors.white.withValues(alpha: 0.9),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(30),
                 borderSide: BorderSide.none,
@@ -184,7 +184,7 @@ class _SplashScreenState extends State<SplashScreen> {
             decoration: InputDecoration(
               hintText: "Password",
               filled: true,
-              fillColor: Colors.white.withOpacity(0.9),
+              fillColor: Colors.white.withValues(alpha: 0.9),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(30),
                 borderSide: BorderSide.none,

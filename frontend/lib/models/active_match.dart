@@ -1,3 +1,4 @@
+class ActiveMatch {
   final String id;
   final String opponentId;
   final String opponentUsername;
