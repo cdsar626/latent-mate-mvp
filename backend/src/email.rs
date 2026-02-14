@@ -18,7 +18,7 @@ pub async fn send_confirmation_email(email: &str, user_id: i32) -> Result<(), Bo
     let twitter_url = format!("https://twitter.com/intent/tweet?text={}", urlencoding::encode(&share_text));
     let whatsapp_url = format!("https://wa.me/?text={}", urlencoding::encode(&share_text));
     // For Instagram, we can't share text directly via link easily. We can link to the profile.
-    let instagram_url = "https://instagram.com/latentmate"; 
+    let instagram_url = "https://instagram.com/latentmateapp"; 
 
     let mut html_content = include_str!("templates/welcome_email.html").to_string();
     html_content = html_content.replace("{{user_id}}", &user_id.to_string());
