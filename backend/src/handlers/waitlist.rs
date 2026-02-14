@@ -13,6 +13,7 @@ pub struct JoinWaitlistRequest {
     email: String,
     country: String,
     state: Option<String>,
+    gender: String,
     website: Option<String>, // Honeypot field
 }
 
@@ -32,6 +33,7 @@ pub async fn join_waitlist(
     let email = payload.email.clone();
     let country = payload.country.clone();
     let user_state = payload.state.clone();
+    let gender = payload.gender.clone();
     
     tracing::info!("Received join waitlist request for: {}", email);
 
@@ -43,11 +45,12 @@ pub async fn join_waitlist(
 
     // 1. Save to DB (Insert or Get existing ID)
     let user_id = match sqlx::query_scalar::<_, i32>(
-        "INSERT INTO waitlist (email, country, state, created_at) VALUES ($1, $2, $3, NOW()) ON CONFLICT (email) DO NOTHING RETURNING id"
+        "INSERT INTO waitlist (email, country, state, gender, created_at) VALUES ($1, $2, $3, $4, NOW()) ON CONFLICT (email) DO NOTHING RETURNING id"
     )
     .bind(&email)
     .bind(&country)
     .bind(&user_state)
+    .bind(&gender)
     .fetch_optional(&pool)
     .await
     {
