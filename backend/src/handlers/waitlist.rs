@@ -41,24 +41,40 @@ pub async fn join_waitlist(
         state_guard.db.clone()
     };
 
-    // 1. Save to DB
-    let result = sqlx::query(
-        "INSERT INTO waitlist (email, country, state) VALUES ($1, $2, $3) ON CONFLICT (email) DO NOTHING"
+    // 1. Save to DB (Insert or Get existing ID)
+    let user_id = match sqlx::query_scalar::<_, i32>(
+        "INSERT INTO waitlist (email, country, state, created_at) VALUES ($1, $2, $3, NOW()) ON CONFLICT (email) DO NOTHING RETURNING id"
     )
     .bind(&email)
     .bind(&country)
     .bind(&user_state)
-    .execute(&pool)
-    .await;
-
-    if let Err(e) = result {
-        tracing::error!("Database error: {:?}", e);
-        return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": "Failed to save user"}))).into_response();
-    }
+    .fetch_optional(&pool)
+    .await
+    {
+        Ok(Some(id)) => id,
+        Ok(None) => {
+             // Email exists, fetch the ID
+             match sqlx::query_scalar::<_, i32>("SELECT id FROM waitlist WHERE email = $1")
+                .bind(&email)
+                .fetch_one(&pool)
+                .await 
+            {
+                Ok(id) => id,
+                Err(e) => {
+                    tracing::error!("Failed to fetch existing user ID: {:?}", e);
+                    return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": "Database error"}))).into_response();
+                }
+            }
+        },
+        Err(e) => {
+            tracing::error!("Database error: {:?}", e);
+            return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": "Failed to save user"}))).into_response();
+        }
+    };
 
     // 2. Send Email (spawn task to avoid blocking)
     tokio::spawn(async move {
-        if let Err(e) = email::send_confirmation_email(&email).await {
+        if let Err(e) = email::send_confirmation_email(&email, user_id).await {
             tracing::error!("Failed to send email to {}: {:?}", email, e);
         } else {
             tracing::info!("Confirmation email sent to {}", email);

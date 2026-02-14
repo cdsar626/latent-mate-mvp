@@ -1,13 +1,30 @@
 use serde_json::json;
 use std::env;
 
-pub async fn send_confirmation_email(email: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+pub async fn send_confirmation_email(email: &str, user_id: i32) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let api_key = env::var("RESEND_API_KEY").expect("RESEND_API_KEY must be set");
     let sender_email = env::var("SENDER_EMAIL").expect("SENDER_EMAIL must be set");
     
     let client = reqwest::Client::new();
     
-    let html_content = include_str!("templates/welcome_email.html");
+    // Prepare social share links
+    // "I am the N {id} registered for the next gen of creating significant connections with people. The more people join more people close when matching. JSoin Latent Mate waitlist! https://latentmate.com"
+    // Refined: "I’m #{user_id} on the list for Latent Mate. It’s the next gen of meaningful connections—pure essence, no prejudice. The more of us join, the sooner we match. Get on the waitlist! https://latentmate.com"
+    
+    let share_text = format!(
+        "I’m #{} on the list for Latent Mate. It’s the next gen of meaningful connections—pure essence, no prejudice. The more of us join, the sooner we match. Get on the waitlist! https://latentmate.com", 
+        user_id
+    );
+    let twitter_url = format!("https://twitter.com/intent/tweet?text={}", urlencoding::encode(&share_text));
+    let whatsapp_url = format!("https://wa.me/?text={}", urlencoding::encode(&share_text));
+    // For Instagram, we can't share text directly via link easily. We can link to the profile.
+    let instagram_url = "https://instagram.com/latentmate"; 
+
+    let mut html_content = include_str!("templates/welcome_email.html").to_string();
+    html_content = html_content.replace("{{user_id}}", &user_id.to_string());
+    html_content = html_content.replace("{{twitter_url}}", &twitter_url);
+    html_content = html_content.replace("{{whatsapp_url}}", &whatsapp_url);
+    html_content = html_content.replace("{{instagram_url}}", &instagram_url);
 
     let body = json!({
         "from": sender_email,
