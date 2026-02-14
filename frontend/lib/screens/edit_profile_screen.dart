@@ -78,7 +78,13 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             }
             if (gp.viewedProfile!['avatar_config'] != null) {
                 try {
-                _selectedColor = Color(int.parse(gp.viewedProfile!['avatar_config']));
+                  final String raw = gp.viewedProfile!['avatar_config'];
+                  // Try decimal first (default from .toString()), fallback to hex
+                  int? colorVal = int.tryParse(raw);
+                  colorVal ??= int.tryParse(raw, radix: 16);
+                  if (colorVal != null) {
+                    _selectedColor = Color(colorVal);
+                  }
                 } catch (_) {}
             }
          });

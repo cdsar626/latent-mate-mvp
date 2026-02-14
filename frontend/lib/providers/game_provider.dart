@@ -294,6 +294,11 @@ class GameProvider with ChangeNotifier {
   }
 
   void setViewedProfile(Map<String, dynamic> profile) {
+    // Backend sends 'user_id', frontend expects 'id'. Normalize.
+    if (profile['id'] == null && profile['user_id'] != null) {
+      profile['id'] = profile['user_id'];
+    }
+
     _viewedProfile = profile;
     if (profile['id'] == _currentUser?.id) {
         _saveLocalProfile(profile);

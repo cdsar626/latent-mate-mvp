@@ -33,7 +33,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
             _bioController.text,
             _selectedTags,
             // ignore: deprecated_member_use
-            _petColor.value.toRadixString(16)
+            _petColor.value.toString()
         );
     });
 
