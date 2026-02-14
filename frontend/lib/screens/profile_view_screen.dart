@@ -18,8 +18,12 @@ class _ProfileViewScreenState extends State<ProfileViewScreen> {
   void initState() {
     super.initState();
     // Trigger a profile fetch for the current match opponent
-    // Note: requires opponent's user_id. We'll use match info.
-    // For now, we show whatever viewedProfile data is available.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final gp = Provider.of<GameProvider>(context, listen: false);
+      if (gp.currentMatch != null) {
+        gp.fetchUserProfile(gp.currentMatch!.opponentId);
+      }
+    });
   }
 
   @override

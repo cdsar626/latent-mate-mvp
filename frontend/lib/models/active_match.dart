@@ -1,5 +1,5 @@
-class ActiveMatch {
   final String id;
+  final String opponentId;
   final String opponentUsername;
   final String? avatarConfig;
   final int affinity;
@@ -8,6 +8,7 @@ class ActiveMatch {
 
   ActiveMatch({
     required this.id,
+    required this.opponentId,
     required this.opponentUsername,
     this.avatarConfig,
     required this.affinity,
@@ -18,6 +19,7 @@ class ActiveMatch {
   factory ActiveMatch.fromJson(Map<String, dynamic> json) {
     return ActiveMatch(
       id: json['id'],
+      opponentId: json['opponent_id'] ?? '',
       opponentUsername: json['opponent_username'],
       avatarConfig: json['avatar_config'],
       affinity: json['affinity'] ?? 0,

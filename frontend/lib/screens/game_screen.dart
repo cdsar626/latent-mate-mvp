@@ -24,9 +24,26 @@ class GameScreen extends StatelessWidget {
             Navigator.of(context).pop();
           },
         ),
-        title: Text(
-          gp.currentMatch?.opponentUsername ?? "Match",
-          style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              gp.currentMatch?.opponentUsername ?? "Match",
+              style: GoogleFonts.poppins(fontWeight: FontWeight.w600, fontSize: 16),
+            ),
+            if (gp.isPartnerTyping)
+              Text(
+                'typing...',
+                style: GoogleFonts.poppins(
+                  fontSize: 11,
+                  color: Colors.deepPurple,
+                  fontWeight: FontWeight.w500,
+                ),
+              ).animate(onPlay: (c) => c.repeat(reverse: true))
+                .fadeIn(duration: 600.ms)
+                .then()
+                .fadeOut(duration: 600.ms),
+          ],
         ),
         actions: [
           // View partner profile

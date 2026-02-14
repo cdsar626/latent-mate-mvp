@@ -387,6 +387,20 @@ pub async fn handle_socket(socket: WebSocket, state: SharedState) {
                                 }
 
                                 if both_answered {
+                                    // Look up usernames for metadata
+                                    let u1_username = state_guard.users.get(&user1_id_log).map(|u| u.username.clone()).unwrap_or("User".to_string());
+                                    let u2_username = state_guard.users.get(&user2_id_log).map(|u| u.username.clone()).unwrap_or("User".to_string());
+
+                                    // Construct metadata
+                                    let metadata = serde_json::json!({
+                                        "question": question_text,
+                                        "user1": { "id": user1_id_log, "username": u1_username, "answer": answer1 },
+                                        "user2": { "id": user2_id_log, "username": u2_username, "answer": answer2 },
+                                        "matched": answers_matched
+                                    });
+                                    let summary_content = format!("Question: {}", question_text);
+                                    let summary_msg_id = Uuid::new_v4();
+
                                     // Per-round logging
                                     info!(
                                         session_id = %session_id_uuid,
@@ -405,12 +419,26 @@ pub async fn handle_socket(socket: WebSocket, state: SharedState) {
                                     // Update DB
                                     let db_pool = state_guard.db.clone();
                                     let session_id_str = session_id_uuid.to_string();
+                                    let summary_msg_id_str = summary_msg_id.to_string();
+                                    let summary_content_clone = summary_content.clone();
+                                    let metadata_clone = metadata.clone();
+                                    let sender_id_str = user1_id_log.to_string();
 
                                     tokio::spawn(async move {
                                         let _ = sqlx::query("UPDATE matches SET affinity = $1, chat_unlocked = $2, last_activity = CURRENT_TIMESTAMP WHERE id = $3")
                                             .bind(affinity as i32)
                                             .bind(chat_unlocked)
+                                            .bind(&session_id_str)
+                                            .execute(&db_pool)
+                                            .await;
+                                        
+                                        // Insert summary message
+                                        let _ = sqlx::query("INSERT INTO messages (id, match_id, sender_id, content, type, metadata) VALUES ($1, $2, $3, $4, 'question_summary', $5)")
+                                            .bind(summary_msg_id_str)
                                             .bind(session_id_str)
+                                            .bind(sender_id_str)
+                                            .bind(summary_content_clone)
+                                            .bind(metadata_clone)
                                             .execute(&db_pool)
                                             .await;
                                     });
@@ -421,9 +449,20 @@ pub async fn handle_socket(socket: WebSocket, state: SharedState) {
                                     };
                                     let update_json = serde_json::to_string(&update_msg).unwrap();
 
+                                    let summary_msg = ServerMessage::ChatMessage {
+                                        id: summary_msg_id.to_string(),
+                                        sender_id: user1_id_log,
+                                        content: summary_content,
+                                        timestamp: chrono::Utc::now().to_rfc3339(),
+                                        type_: "question_summary".to_string(),
+                                        metadata: Some(metadata),
+                                    };
+                                    let summary_json = serde_json::to_string(&summary_msg).unwrap();
+
                                     for u in &session_user_ids {
                                         if let Some(tx) = state_guard.tx_map.get(u) {
                                             let _ = tx.send(Message::Text(update_json.clone()));
+                                            let _ = tx.send(Message::Text(summary_json.clone()));
                                         }
                                     }
 
@@ -473,12 +512,14 @@ pub async fn handle_socket(socket: WebSocket, state: SharedState) {
                                     for &other_uid in &session.user_ids {
                                         if other_uid != uid {
                                             if let Some(tx) = state_guard.tx_map.get(&other_uid) {
-                                                let msg = ServerMessage::ChatMessage {
-                                                    id: msg_id_str.clone(),
-                                                    sender_id: uid,
-                                                    content: content.clone(),
-                                                    timestamp: now.clone(),
-                                                };
+                                                    let msg = ServerMessage::ChatMessage {
+                                                        id: msg_id_str.clone(),
+                                                        sender_id: uid,
+                                                        content: content.clone(),
+                                                        timestamp: now.clone(),
+                                                        type_: "text".to_string(),
+                                                        metadata: None,
+                                                    };
                                                 let _ = tx.send(Message::Text(serde_json::to_string(&msg).unwrap()));
                                             }
                                         }
@@ -490,6 +531,8 @@ pub async fn handle_socket(socket: WebSocket, state: SharedState) {
                                         sender_id: uid,
                                         content,
                                         timestamp: now,
+                                        type_: "text".to_string(),
+                                        metadata: None,
                                     };
                                     let _ = tx.send(Message::Text(serde_json::to_string(&echo).unwrap()));
 
@@ -512,7 +555,7 @@ pub async fn handle_socket(socket: WebSocket, state: SharedState) {
                             };
 
                             let rows = sqlx::query(
-                                "SELECT id, sender_id, content, created_at FROM messages WHERE match_id = $1 ORDER BY created_at ASC LIMIT 200"
+                                "SELECT id, sender_id, content, created_at, type, metadata FROM messages WHERE match_id = $1 ORDER BY created_at ASC LIMIT 200"
                             )
                             .bind(&match_id)
                             .fetch_all(&db_pool)
@@ -525,11 +568,15 @@ pub async fn handle_socket(socket: WebSocket, state: SharedState) {
                                         let sid: String = r.get("sender_id");
                                         let content: String = r.get("content");
                                         let created: chrono::NaiveDateTime = r.get("created_at");
+                                        let type_: String = r.get("type");
+                                        let metadata: Option<serde_json::Value> = r.get("metadata");
                                         ChatMessage {
                                             id: id_str,
                                             sender_id: Uuid::parse_str(&sid).unwrap_or_default(),
                                             content,
                                             timestamp: created.and_utc().to_rfc3339(),
+                                            type_,
+                                            metadata,
                                         }
                                     }).collect();
 
@@ -1026,6 +1073,7 @@ async fn fetch_matches_by_status(state: &SharedState, tx: &mpsc::UnboundedSender
 
                 matches.push(ActiveMatch {
                     id: Uuid::parse_str(&mid).unwrap_or_default(),
+                    opponent_id: Uuid::parse_str(&opp_id_str).unwrap_or_default(),
                     opponent_username: opp_name,
                     avatar_config: av_conf,
                     affinity: aff as u32,

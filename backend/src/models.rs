@@ -38,11 +38,15 @@ pub struct ChatMessage {
     pub sender_id: Uuid,
     pub content: String,
     pub timestamp: String,
+    #[serde(rename = "type")]
+    pub type_: String,
+    pub metadata: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ActiveMatch {
     pub id: Uuid,
+    pub opponent_id: Uuid,
     pub opponent_username: String,
     pub avatar_config: Option<String>,
     pub affinity: u32,
@@ -85,7 +89,7 @@ pub enum ServerMessage {
     Question { id: Uuid, text: String, options: Vec<String> },
     NoMoreQuestions,
     AffinityUpdate { score: u32, unlocked: bool },
-    ChatMessage { id: String, sender_id: Uuid, content: String, timestamp: String },
+    ChatMessage { id: String, sender_id: Uuid, content: String, timestamp: String, #[serde(rename = "type")] type_: String, metadata: Option<serde_json::Value> },
     History { messages: Vec<ChatMessage> },
     ActiveMatches { matches: Vec<ActiveMatch> },
     ArchivedMatches { matches: Vec<ActiveMatch> },

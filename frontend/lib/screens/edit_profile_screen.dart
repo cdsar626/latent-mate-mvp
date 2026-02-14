@@ -14,21 +14,60 @@ class EditProfileScreen extends StatefulWidget {
   State<EditProfileScreen> createState() => _EditProfileScreenState();
 }
 
-class _EditProfileScreenState extends State<EditProfileScreen> {
-  final TextEditingController _bioController = TextEditingController();
-  final TextEditingController _tagsController = TextEditingController();
-  Color _selectedColor = Colors.blue;
-  bool _isSaving = false;
+  final List<String> _selectedTags = [];
+  
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+        final gp = Provider.of<GameProvider>(context, listen: false);
+        gp.fetchUserProfile(gp.currentUser?.id ?? "");
+        gp.addListener(_onProfileUpdate);
+    });
+  }
 
-  final List<Color> _colorOptions = [
-    Colors.blue, Colors.red, Colors.green, Colors.orange,
-    Colors.purple, Colors.teal, Colors.pink, Colors.amber,
-  ];
+  @override
+  void dispose() {
+    final gp = Provider.of<GameProvider>(context, listen: false);
+    gp.removeListener(_onProfileUpdate);
+    _bioController.dispose();
+    _tagsController.dispose();
+    super.dispose();
+  }
+
+  void _onProfileUpdate() {
+      if (!mounted) return;
+      final gp = Provider.of<GameProvider>(context, listen: false);
+      
+      // Populate if we have data and fields are empty
+      if (gp.viewedProfile != null && gp.viewedProfile!['id'] == gp.currentUser?.id && _selectedTags.isEmpty && _bioController.text.isEmpty) {
+         setState(() {
+            _bioController.text = gp.viewedProfile!['bio'] ?? "";
+            final tagsRaw = gp.viewedProfile!['tags'];
+            if (tagsRaw != null) {
+                try {
+                    final List<dynamic> tags = tagsRaw.startsWith('[')
+                    ? (tagsRaw.replaceAll('[', '').replaceAll(']', '').replaceAll('"', '').split(','))
+                    : [tagsRaw];
+                    _selectedTags.clear();
+                    _selectedTags.addAll(tags.map((t) => t.toString().trim()).where((t) => t.isNotEmpty));
+                } catch(_) {}
+            }
+            if (gp.viewedProfile!['avatar_config'] != null) {
+                try {
+                _selectedColor = Color(int.parse(gp.viewedProfile!['avatar_config']));
+                } catch (_) {}
+            }
+         });
+      }
+  }
 
   @override
   Widget build(BuildContext context) {
     final gp = Provider.of<GameProvider>(context);
     final authService = AuthService();
+    
+    // Population logic moved to listener
 
     return Scaffold(
       appBar: AppBar(
@@ -87,18 +126,62 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
               ),
             ).animate().fadeIn(delay: 100.ms),
-            const SizedBox(height: 16),
+            const SizedBox(height: 24),
 
             // Tags
-            TextField(
-              controller: _tagsController,
-              decoration: InputDecoration(
-                labelText: "Interests",
-                hintText: "music, gaming, hiking...",
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-              ),
+            Align(alignment: Alignment.centerLeft, child: Text("Interests", style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.grey[600]))),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: _selectedTags.map((tag) {
+                return Chip(
+                  label: Text(tag),
+                  deleteIcon: const Icon(Icons.close, size: 18),
+                  onDeleted: () {
+                    setState(() {
+                      _selectedTags.remove(tag);
+                    });
+                  },
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _tagsController,
+                    decoration: InputDecoration(
+                      hintText: "Add an interest...",
+                      isDense: true,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    onSubmitted: (value) {
+                       if (value.trim().isNotEmpty) {
+                          setState(() {
+                             _selectedTags.add(value.trim());
+                             _tagsController.clear();
+                          });
+                       }
+                    },
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.add_circle, color: Colors.deepPurple),
+                  onPressed: () {
+                     if (_tagsController.text.trim().isNotEmpty) {
+                        setState(() {
+                           _selectedTags.add(_tagsController.text.trim());
+                           _tagsController.clear();
+                        });
+                     }
+                  },
+                ),
+              ],
             ).animate().fadeIn(delay: 200.ms),
-            const SizedBox(height: 24),
+
+            const SizedBox(height: 32),
 
             // Save
             SizedBox(
@@ -106,10 +189,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               child: ElevatedButton(
                 onPressed: _isSaving ? null : () {
                   setState(() => _isSaving = true);
-                  final tags = _tagsController.text.split(',').map((t) => t.trim()).where((t) => t.isNotEmpty).toList();
                   gp.updateProfile(
                     _bioController.text,
-                    tags,
+                    _selectedTags,
                     _selectedColor.value.toString(),
                   );
                   // Give it a moment, then pop back with a success message

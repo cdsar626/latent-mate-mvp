@@ -112,185 +112,186 @@ class _ChatScreenState extends State<ChatScreen> {
   Widget build(BuildContext context) {
     final gp = Provider.of<GameProvider>(context);
     final messages = gp.messages;
-    final matchName = gp.currentMatch?.opponentUsername ?? 'Chat';
 
     // Auto-scroll when messages change
     WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
 
-    return Scaffold(
-      backgroundColor: const Color(0xFFF8F7FC),
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios, size: 18, color: Color(0xFF2D2D3A)),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              matchName,
-              style: GoogleFonts.poppins(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                color: const Color(0xFF2D2D3A),
-              ),
-            ),
-            if (gp.isPartnerTyping)
-              Text(
-                'typing...',
-                style: GoogleFonts.poppins(
-                  fontSize: 11,
-                  color: Colors.deepPurple,
-                  fontWeight: FontWeight.w500,
-                ),
-              ).animate(onPlay: (c) => c.repeat(reverse: true))
-                .fadeIn(duration: 600.ms)
-                .then()
-                .fadeOut(duration: 600.ms),
-          ],
-        ),
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(1),
-          child: Container(height: 1, color: Colors.grey.withOpacity(0.1)),
-        ),
-      ),
-      body: Column(
-        children: [
-          // Messages area
-          Expanded(
-            child: messages.isEmpty
-                ? Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.chat_outlined, size: 48, color: Colors.grey[300]),
-                        const SizedBox(height: 12),
-                        Text(
-                          'Start your conversation',
-                          style: GoogleFonts.poppins(
-                            fontSize: 14,
-                            color: Colors.grey[400],
-                            fontWeight: FontWeight.w500,
-                          ),
+    return Column(
+      children: [
+        // Messages area
+        Expanded(
+          child: messages.isEmpty
+              ? Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.chat_outlined, size: 48, color: Colors.grey[300]),
+                      const SizedBox(height: 12),
+                      Text(
+                        'Start your conversation',
+                        style: GoogleFonts.poppins(
+                          fontSize: 14,
+                          color: Colors.grey[400],
+                          fontWeight: FontWeight.w500,
                         ),
-                      ],
-                    ),
-                  )
-                : ListView.builder(
-                    controller: _scrollController,
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                    itemCount: messages.length,
-                    itemBuilder: (context, index) {
-                      final msg = messages[index];
-                      final showDateSep = _shouldShowDateSeparator(messages, index);
+                      ),
+                    ],
+                  ),
+                )
+              : ListView.builder(
+                  controller: _scrollController,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  itemCount: messages.length,
+                  itemBuilder: (context, index) {
+                    final msg = messages[index];
+                    final showDateSep = _shouldShowDateSeparator(messages, index);
 
-                      // Check if next message is from same sender and within 2 min — group them
-                      final bool isLastInGroup = index == messages.length - 1 ||
-                          messages[index + 1].isMe != msg.isMe ||
-                          (messages[index + 1].timestamp != null && msg.timestamp != null &&
-                              messages[index + 1].timestamp!.difference(msg.timestamp!).inMinutes > 2);
+                    // Check if next message is from same sender and within 2 min — group them
+                    final bool isLastInGroup = index == messages.length - 1 ||
+                        messages[index + 1].isMe != msg.isMe ||
+                        (messages[index + 1].timestamp != null && msg.timestamp != null &&
+                            messages[index + 1].timestamp!.difference(msg.timestamp!).inMinutes > 2);
 
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          // Date separator
-                          if (showDateSep)
-                            Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                              child: Center(
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
-                                  decoration: BoxDecoration(
-                                    color: Colors.grey.withOpacity(0.08),
-                                    borderRadius: BorderRadius.circular(20),
-                                  ),
-                                  child: Text(
-                                    _formatDateSeparator(msg.timestamp ?? DateTime.now()),
-                                    style: GoogleFonts.poppins(
-                                      fontSize: 11,
-                                      color: Colors.grey[500],
-                                      fontWeight: FontWeight.w500,
-                                    ),
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        // Date separator
+                        if (showDateSep)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            child: Center(
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+                                decoration: BoxDecoration(
+                                  color: Colors.grey.withOpacity(0.08),
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: Text(
+                                  _formatDateSeparator(msg.timestamp ?? DateTime.now()),
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 11,
+                                    color: Colors.grey[500],
+                                    fontWeight: FontWeight.w500,
                                   ),
                                 ),
                               ),
                             ),
+                          ),
 
-                          // Message row — full-width, left/right aligned
-                          _buildMessage(msg, isLastInGroup),
-                        ],
-                      );
-                    },
-                  ),
+                        // Message row — full-width, left/right aligned
+                        _buildMessage(msg, isLastInGroup),
+                      ],
+                    );
+                  },
+                ),
+        ),
+
+        // Input area
+        Container(
+          padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.04),
+                blurRadius: 8,
+                offset: const Offset(0, -2),
+              ),
+            ],
           ),
-
-          // Input area
-          Container(
-            padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.04),
-                  blurRadius: 8,
-                  offset: const Offset(0, -2),
+          child: SafeArea(
+            top: false,
+            child: Row(
+              children: [
+                Expanded(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF3F1F9),
+                      borderRadius: BorderRadius.circular(24),
+                    ),
+                    child: TextField(
+                      controller: _controller,
+                      onChanged: (_) => _onTextChanged(gp),
+                      onSubmitted: (_) => _sendMessage(gp),
+                      textInputAction: TextInputAction.send,
+                      style: GoogleFonts.poppins(fontSize: 14, color: const Color(0xFF2D2D3A)),
+                      decoration: InputDecoration(
+                        hintText: 'Write a message...',
+                        hintStyle: GoogleFonts.poppins(fontSize: 14, color: Colors.grey[400]),
+                        border: InputBorder.none,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                        isDense: true,
+                      ),
+                      maxLines: 4,
+                      minLines: 1,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Material(
+                  color: Colors.deepPurple,
+                  borderRadius: BorderRadius.circular(22),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(22),
+                    onTap: () => _sendMessage(gp),
+                    child: const Padding(
+                      padding: EdgeInsets.all(10),
+                      child: Icon(Icons.send_rounded, color: Colors.white, size: 20),
+                    ),
+                  ),
                 ),
               ],
             ),
-            child: SafeArea(
-              top: false,
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF3F1F9),
-                        borderRadius: BorderRadius.circular(24),
-                      ),
-                      child: TextField(
-                        controller: _controller,
-                        onChanged: (_) => _onTextChanged(gp),
-                        onSubmitted: (_) => _sendMessage(gp),
-                        textInputAction: TextInputAction.send,
-                        style: GoogleFonts.poppins(fontSize: 14, color: const Color(0xFF2D2D3A)),
-                        decoration: InputDecoration(
-                          hintText: 'Write a message...',
-                          hintStyle: GoogleFonts.poppins(fontSize: 14, color: Colors.grey[400]),
-                          border: InputBorder.none,
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-                          isDense: true,
-                        ),
-                        maxLines: 4,
-                        minLines: 1,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  Material(
-                    color: Colors.deepPurple,
-                    borderRadius: BorderRadius.circular(22),
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(22),
-                      onTap: () => _sendMessage(gp),
-                      child: const Padding(
-                        padding: EdgeInsets.all(10),
-                        child: Icon(Icons.send_rounded, color: Colors.white, size: 20),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
   /// Modern, no-bubble message style — full-width, clean and space-efficient
   Widget _buildMessage(ChatMessage msg, bool isLastInGroup) {
+    if (msg.type == 'question_summary') {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: GestureDetector(
+          onTap: () => _showQuestionDetails(context, msg),
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 20),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.amber[50], // Distinctive color
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.amber[200]!, width: 1.5),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.lightbulb_outline, color: Colors.amber, size: 24),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        "Question Round",
+                        style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.amber[800]),
+                      ),
+                      Text(
+                        msg.content, // "Question: ..."
+                        style: GoogleFonts.poppins(fontSize: 13, color: Colors.black87),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+                const Icon(Icons.chevron_right, color: Colors.amber),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     final isMe = msg.isMe;
     final time = _formatTime(msg.timestamp);
 
@@ -356,5 +357,124 @@ class _ChatScreenState extends State<ChatScreen> {
         ],
       ),
     );
+  }
+
+  void _showQuestionDetails(BuildContext context, ChatMessage msg) {
+    if (msg.metadata == null) return;
+    
+    final meta = msg.metadata!;
+    final question = meta['question'] ?? 'Question';
+    final user1 = meta['user1'] ?? {};
+    final user2 = meta['user2'] ?? {};
+    final matched = meta['matched'] ?? false;
+    
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: "Dismiss",
+      pageBuilder: (context, _, __) {
+        return Align(
+          alignment: Alignment.centerRight,
+          child: Material(
+            elevation: 16,
+            borderRadius: const BorderRadius.horizontal(left: Radius.circular(16)),
+            child: Container(
+              width: MediaQuery.of(context).size.width * 0.85,
+              height: double.infinity,
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.horizontal(left: Radius.circular(16)),
+              ),
+              child: Column(
+                children: [
+                  // Header
+                  Container(
+                     padding: const EdgeInsets.fromLTRB(20, 40, 20, 20),
+                     color: Colors.deepPurple,
+                     child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                           Row(
+                              children: [
+                                 const Icon(Icons.lightbulb, color: Colors.amber, size: 28),
+                                 const SizedBox(width: 8),
+                                 Text("Round Result", style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
+                                 const Spacer(),
+                                 IconButton(
+                                    icon: const Icon(Icons.close, color: Colors.white70),
+                                    onPressed: () => Navigator.of(context).pop(),
+                                 )
+                              ],
+                           ),
+                           const SizedBox(height: 16),
+                           Text(
+                              question,
+                              style: GoogleFonts.poppins(fontSize: 16, color: Colors.white, height: 1.4),
+                           ),
+                        ],
+                     ),
+                  ),
+                  
+                  // Body
+                  Expanded(
+                     child: SingleChildScrollView(
+                        padding: const EdgeInsets.all(24),
+                        child: Column(
+                           children: [
+                              _buildAnswerCard(user1, Colors.blue),
+                              const SizedBox(height: 16),
+                              _buildAnswerCard(user2, Colors.orange),
+                              const SizedBox(height: 32),
+                              if (matched) 
+                                 Column(
+                                    children: [
+                                       const Icon(Icons.favorite, color: Colors.pink, size: 48),
+                                       const SizedBox(height: 8),
+                                       Text("It's a match!", style: GoogleFonts.poppins(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.pink)),
+                                       Text("+1 Affinity", style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey)),
+                                    ],
+                                 )
+                              else
+                                 Text("No match this time.", style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey, fontStyle: FontStyle.italic)),
+                           ],
+                        ),
+                     ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+      transitionBuilder: (context, anim, secondaryAnim, child) {
+         return SlideTransition(
+            position: Tween<Offset>(begin: const Offset(1, 0), end: Offset.zero).animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
+            child: child,
+         );
+      },
+      transitionDuration: const Duration(milliseconds: 300),
+    );
+  }
+  
+  Widget _buildAnswerCard(Map<String, dynamic> data, Color color) {
+     final username = data['username'] ?? 'User';
+     final answer = data['answer'] ?? '...';
+     return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+           color: color.withOpacity(0.05),
+           borderRadius: BorderRadius.circular(12),
+           border: Border.all(color: color.withOpacity(0.3)),
+        ),
+        child: Column(
+           crossAxisAlignment: CrossAxisAlignment.start,
+           children: [
+              Text(username, style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.bold, color: color)),
+              const SizedBox(height: 4),
+              Text(answer, style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w500)),
+           ],
+        ),
+     );
   }
 }
