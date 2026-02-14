@@ -8,6 +8,8 @@ use axum::{
 use crate::state::SharedState;
 use crate::ws::handle_socket;
 
+pub mod waitlist;
+
 pub async fn ws_handler(ws: WebSocketUpgrade, State(state): State<SharedState>) -> impl IntoResponse {
     ws.on_upgrade(move |socket| handle_socket(socket, state))
 }

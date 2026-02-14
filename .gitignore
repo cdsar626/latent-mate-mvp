@@ -1,3 +1,5 @@
+.env
+Landing_App/
 TASKS.md
 backend/target/
 frontend/build/

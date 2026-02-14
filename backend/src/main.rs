@@ -3,18 +3,20 @@ mod state;
 mod handlers;
 mod ws;
 mod questions;
+mod email;
 
 use axum::{
-    routing::get,
+    routing::{get, post},
     Router,
 };
 use std::sync::{Arc, Mutex};
 use state::AppState;
-use handlers::ws_handler;
+use handlers::{ws_handler, waitlist::join_waitlist};
 use sqlx::postgres::PgPoolOptions;
 use dotenv::dotenv;
 use std::env;
 use tracing_subscriber;
+use tower_http::services::ServeDir;
 
 #[tokio::main]
 async fn main() {
@@ -44,9 +46,16 @@ async fn main() {
     // Initialize shared state
     let shared_state = Arc::new(Mutex::new(AppState::new(pool)));
 
-    // Build our application with a route
+    // Static files configuration
+    let dist_path = std::env::var("STATIC_DIR").unwrap_or_else(|_| "../Landing_App/dist".to_string());
+    tracing::info!("Serving static files from: {}", dist_path);
+    let static_files = ServeDir::new(dist_path).append_index_html_on_directories(true);
+
+    // Build our application with routes
     let app = Router::new()
         .route("/ws", get(ws_handler))
+        .route("/api/join-waitlist", post(join_waitlist))
+        .fallback_service(static_files)
         .with_state(shared_state);
 
     // Run it
