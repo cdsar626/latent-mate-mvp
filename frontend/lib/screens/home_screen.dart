@@ -97,7 +97,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('LatentMate', style: GoogleFonts.pacifico(color: Colors.deepPurple, fontSize: 24)),
+        title: Text('LatentMate', style: GoogleFonts.ooohBaby(color: Colors.deepPurple, fontSize: 32, fontWeight: FontWeight.bold)),
         backgroundColor: Colors.transparent,
         elevation: 0,
         actions: [

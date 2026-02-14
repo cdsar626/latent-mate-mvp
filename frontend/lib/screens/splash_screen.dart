@@ -115,7 +115,7 @@ class _SplashScreenState extends State<SplashScreen> {
       body: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
-            colors: [Color(0xFF6A11CB), Color(0xFF2575FC)],
+            colors: [Color(0xFF00C6FF), Color(0xFF0072FF), Color(0xFF6A11CB)],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
@@ -140,7 +140,7 @@ class _SplashScreenState extends State<SplashScreen> {
         const SizedBox(height: 24),
         Text(
           'LatentMate',
-          style: GoogleFonts.pacifico(fontSize: 48, color: Colors.white),
+          style: GoogleFonts.ooohBaby(fontSize: 48, color: Colors.white),
         ).animate().fadeIn().moveY(begin: 20, end: 0),
         const SizedBox(height: 32),
         const CircularProgressIndicator(color: Colors.white70),
@@ -161,7 +161,7 @@ class _SplashScreenState extends State<SplashScreen> {
           const SizedBox(height: 24),
           Text(
             'LatentMate',
-            style: GoogleFonts.pacifico(fontSize: 48, color: Colors.white),
+            style: GoogleFonts.ooohBaby(fontSize: 48, color: Colors.white),
           ).animate().fadeIn().moveY(begin: 20, end: 0),
           const SizedBox(height: 48),
           TextField(
