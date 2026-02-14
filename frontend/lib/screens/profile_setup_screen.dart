@@ -32,6 +32,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
         gameProvider.updateProfile(
             _bioController.text,
             _selectedTags,
+            // ignore: deprecated_member_use
             _petColor.value.toRadixString(16)
         );
     });

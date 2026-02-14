@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user.dart';
 import '../models/question.dart';
 import '../models/message.dart';
@@ -28,6 +30,7 @@ class GameProvider with ChangeNotifier {
   bool _noMoreQuestions = false;
   Map<String, dynamic>? _viewedProfile;
   bool _profileUpdated = false;
+  bool _isSyncingProfile = false;
   bool _isPartnerTyping = false;
   bool _initialized = false;
   // Stores session data received before user taps a match (from matchmaking flow)
@@ -49,6 +52,7 @@ class GameProvider with ChangeNotifier {
   bool get noMoreQuestions => _noMoreQuestions;
   Map<String, dynamic>? get viewedProfile => _viewedProfile;
   bool get profileUpdated => _profileUpdated;
+  bool get isSyncingProfile => _isSyncingProfile;
   bool get isPartnerTyping => _isPartnerTyping;
 
   void init(String username) {
@@ -252,12 +256,49 @@ class GameProvider with ChangeNotifier {
   }
 
   void fetchUserProfile(String userId) {
-    _viewedProfile = null;
+    // If fetching for current user, try local first
+    if (userId == _currentUser?.id) {
+       _loadLocalProfile(userId);
+       _isSyncingProfile = true;
+    } else {
+       _viewedProfile = null;
+    }
+    notifyListeners();
     _socketService.sendFetchUserProfile(userId);
+  }
+
+  Future<void> _loadLocalProfile(String userId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final String? profileJson = prefs.getString('user_profile_$userId');
+      if (profileJson != null) {
+        final Map<String, dynamic> localProfile = jsonDecode(profileJson);
+        // Only update if we are still syncing (server hasn't returned yet)
+        if (_isSyncingProfile) {
+            _viewedProfile = localProfile;
+            notifyListeners();
+        }
+      }
+    } catch (e) {
+      debugPrint("Error loading/parsing local profile: $e");
+    }
+  }
+
+  Future<void> _saveLocalProfile(Map<String, dynamic> profile) async {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('user_profile_${profile['id']}', jsonEncode(profile));
+      } catch (e) {
+        debugPrint("Error saving local profile: $e");
+      }
   }
 
   void setViewedProfile(Map<String, dynamic> profile) {
     _viewedProfile = profile;
+    if (profile['id'] == _currentUser?.id) {
+        _saveLocalProfile(profile);
+        _isSyncingProfile = false;
+    }
     notifyListeners();
   }
 

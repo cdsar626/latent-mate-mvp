@@ -288,8 +288,8 @@ class _ChatScreenState extends State<ChatScreen> {
               ],
             ),
           ),
-        ),
-      );
+          ),
+        ).animate().fadeIn(duration: 400.ms).slideX(begin: 0.1, end: 0, curve: Curves.easeOutBack);
     }
 
     final isMe = msg.isMe;
@@ -372,7 +372,7 @@ class _ChatScreenState extends State<ChatScreen> {
       context: context,
       barrierDismissible: true,
       barrierLabel: "Dismiss",
-      pageBuilder: (context, _, __) {
+      pageBuilder: (dialogContext, anim1, anim2) {
         return Align(
           alignment: Alignment.centerRight,
           child: Material(

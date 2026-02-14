@@ -116,11 +116,11 @@ class _HomeScreenState extends State<HomeScreen> {
               final gp = Provider.of<GameProvider>(context, listen: false);
               gp.disconnect(); // Tear down WS first to prevent ghost reconnects
               await _authService.logout();
-              if (mounted) {
-                Navigator.of(context).pushReplacement(
-                  MaterialPageRoute(builder: (_) => const SplashScreen()),
-                );
-              }
+              if (!context.mounted) return;
+
+              Navigator.of(context).pushReplacement(
+                MaterialPageRoute(builder: (_) => const SplashScreen()),
+              );
             },
           ),
         ],

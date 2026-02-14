@@ -24,6 +24,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     Colors.purple, Colors.teal, Colors.pink, Colors.amber,
   ];
   final List<String> _selectedTags = [];
+  bool _isDirty = false;
   
   GameProvider? _gameProvider;
 
@@ -59,16 +60,18 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       final gp = _gameProvider;
       if (gp == null) return;
       
-      // Populate if we have data and fields are empty
-      if (gp.viewedProfile != null && gp.viewedProfile!['id'] == gp.currentUser?.id && _selectedTags.isEmpty && _bioController.text.isEmpty) {
+      // Populate if we have data and user hasn't started editing
+      if (gp.viewedProfile != null && gp.viewedProfile!['id'] == gp.currentUser?.id && !_isDirty) {
          setState(() {
             _bioController.text = gp.viewedProfile!['bio'] ?? "";
             final tagsRaw = gp.viewedProfile!['tags'];
             if (tagsRaw != null) {
                 try {
-                    final List<dynamic> tags = tagsRaw.startsWith('[')
-                    ? (tagsRaw.replaceAll('[', '').replaceAll(']', '').replaceAll('"', '').split(','))
-                    : [tagsRaw];
+                    final List<dynamic> tags = tagsRaw is List 
+                        ? tagsRaw 
+                        : (tagsRaw.toString().startsWith('[')
+                            ? (tagsRaw.toString().replaceAll('[', '').replaceAll(']', '').replaceAll('"', '').split(','))
+                            : [tagsRaw]);
                     _selectedTags.clear();
                     _selectedTags.addAll(tags.map((t) => t.toString().trim()).where((t) => t.isNotEmpty));
                 } catch(_) {}
@@ -91,7 +94,15 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text("Edit Profile", style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+        title: Row(
+          children: [
+            Text("Edit Profile", style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+            if (gp.isSyncingProfile) ...[
+                const SizedBox(width: 12),
+                const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+            ]
+          ],
+        ),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
@@ -120,7 +131,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               spacing: 10,
               children: _colorOptions.map((color) {
                 return GestureDetector(
-                  onTap: () => setState(() => _selectedColor = color),
+                  onTap: () => setState(() {
+                      _selectedColor = color;
+                      _isDirty = true;
+                  }),
                   child: Container(
                     width: 36, height: 36,
                     decoration: BoxDecoration(
@@ -139,6 +153,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             // Bio
             TextField(
               controller: _bioController,
+              onChanged: (_) => _isDirty = true,
               maxLines: 3,
               decoration: InputDecoration(
                 labelText: "Bio",
@@ -161,6 +176,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                   onDeleted: () {
                     setState(() {
                       _selectedTags.remove(tag);
+                      _isDirty = true;
                     });
                   },
                 );
@@ -182,6 +198,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                           setState(() {
                              _selectedTags.add(value.trim());
                              _tagsController.clear();
+                             _isDirty = true;
                           });
                        }
                     },
@@ -194,6 +211,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                         setState(() {
                            _selectedTags.add(_tagsController.text.trim());
                            _tagsController.clear();
+                           _isDirty = true;
                         });
                      }
                   },
@@ -207,23 +225,23 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
-                onPressed: _isSaving ? null : () {
+                onPressed: _isSaving ? null : () async {
                   setState(() => _isSaving = true);
                   gp.updateProfile(
                     _bioController.text,
                     _selectedTags,
+                    // ignore: deprecated_member_use
                     _selectedColor.value.toString(),
                   );
                   // Give it a moment, then pop back with a success message
-                  Future.delayed(const Duration(milliseconds: 800), () {
-                    if (mounted) {
-                      setState(() => _isSaving = false);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text("Profile updated!")),
-                      );
-                      Navigator.of(context).pop();
-                    }
-                  });
+                  await Future.delayed(const Duration(milliseconds: 800));
+                  if (!context.mounted) return;
+                  
+                  setState(() => _isSaving = false);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text("Profile updated!")),
+                  );
+                  Navigator.of(context).pop();
                 },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.deepPurple,
