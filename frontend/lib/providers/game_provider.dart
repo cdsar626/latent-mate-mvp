@@ -55,11 +55,11 @@ class GameProvider with ChangeNotifier {
   bool get isSyncingProfile => _isSyncingProfile;
   bool get isPartnerTyping => _isPartnerTyping;
 
-  void init(String username) {
+  void init(String username, {String? gender, String? interest}) {
     if (_initialized) return;
     _initialized = true;
     _socketService = SocketService(this);
-    _socketService.connect(username);
+    _socketService.connect(username, gender, interest);
   }
 
   void setConnected(User user) {

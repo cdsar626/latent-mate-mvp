@@ -7,6 +7,8 @@ pub struct User {
     pub id: Uuid,
     pub username: String,
     pub socket_id: Option<Uuid>,
+    pub gender: Option<String>,
+    pub interest: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -59,7 +61,7 @@ pub struct ActiveMatch {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload")]
 pub enum ClientMessage {
-    Connect { user_id: String, username: String, email: Option<String> },
+    Connect { user_id: String, username: String, email: Option<String>, gender: Option<String>, interest: Option<String> },
     UpdateProfile { bio: String, tags: Vec<String>, avatar_config: String },
     FindMatch,
     JoinSession { match_id: String },

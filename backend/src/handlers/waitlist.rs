@@ -4,7 +4,7 @@ use axum::{
     response::IntoResponse,
 };
 use serde::Deserialize;
-use std::sync::Arc;
+
 use crate::state::SharedState;
 use crate::email;
 

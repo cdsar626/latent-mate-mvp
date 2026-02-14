@@ -1,3 +1,4 @@
+// ignore_for_file: deprecated_member_use
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -19,6 +20,8 @@ class _SplashScreenState extends State<SplashScreen> {
   final AuthService _authService = AuthService();
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
+  String? _gender;
+  String? _interest;
   bool _isLogin = true;
   bool _isLoading = false;
   bool _isCheckingSession = true;
@@ -59,6 +62,11 @@ class _SplashScreenState extends State<SplashScreen> {
          return;
       }
 
+      if (!_isLogin && (_gender == null || _interest == null)) {
+         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please select gender and interest")));
+         return;
+      }
+
       if (_isLogin) {
         await _authService.signIn(email, password);
       } else {
@@ -87,7 +95,7 @@ class _SplashScreenState extends State<SplashScreen> {
 
       if (!_isLogin) {
          Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (_) => ProfileSetupScreen(username: username)),
+          MaterialPageRoute(builder: (_) => ProfileSetupScreen(username: username, gender: _gender, interest: _interest)),
         );
       } else {
          Provider.of<GameProvider>(context, listen: false).init(username);
@@ -169,7 +177,7 @@ class _SplashScreenState extends State<SplashScreen> {
             decoration: InputDecoration(
               hintText: "Email",
               filled: true,
-              fillColor: Colors.white.withValues(alpha: 0.9),
+              fillColor: Colors.white.withOpacity(0.9),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(30),
                 borderSide: BorderSide.none,
@@ -184,7 +192,7 @@ class _SplashScreenState extends State<SplashScreen> {
             decoration: InputDecoration(
               hintText: "Password",
               filled: true,
-              fillColor: Colors.white.withValues(alpha: 0.9),
+              fillColor: Colors.white.withOpacity(0.9),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(30),
                 borderSide: BorderSide.none,
@@ -192,6 +200,50 @@ class _SplashScreenState extends State<SplashScreen> {
               contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
             ),
           ).animate().fadeIn(delay: 300.ms),
+          if (!_isLogin) ...[
+            const SizedBox(height: 16),
+            DropdownButtonFormField<String>(
+              value: _gender,
+              decoration: InputDecoration(
+                filled: true,
+                fillColor: Colors.white.withOpacity(0.9),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(30),
+                  borderSide: BorderSide.none,
+                ),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                hintText: "I am...",
+              ),
+              items: ['Male', 'Female'].map((String value) {
+                return DropdownMenuItem<String>(
+                  value: value,
+                  child: Text(value),
+                );
+              }).toList(),
+              onChanged: (newValue) => setState(() => _gender = newValue),
+            ).animate().fadeIn(delay: 350.ms),
+            const SizedBox(height: 16),
+            DropdownButtonFormField<String>(
+              value: _interest,
+              decoration: InputDecoration(
+                filled: true,
+                fillColor: Colors.white.withOpacity(0.9),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(30),
+                  borderSide: BorderSide.none,
+                ),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                hintText: "Looking for...",
+              ),
+              items: ['Male', 'Female', 'Both'].map((String value) {
+                return DropdownMenuItem<String>(
+                  value: value,
+                  child: Text(value),
+                );
+              }).toList(),
+              onChanged: (newValue) => setState(() => _interest = newValue),
+            ).animate().fadeIn(delay: 350.ms),
+          ],
           const SizedBox(height: 24),
           if (_isLoading)
             const CircularProgressIndicator(color: Colors.white)

@@ -1,3 +1,4 @@
+// ignore_for_file: deprecated_member_use
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
@@ -7,7 +8,9 @@ import 'home_screen.dart';
 
 class ProfileSetupScreen extends StatefulWidget {
   final String username;
-  const ProfileSetupScreen({super.key, required this.username});
+  final String? gender;
+  final String? interest;
+  const ProfileSetupScreen({super.key, required this.username, this.gender, this.interest});
 
   @override
   State<ProfileSetupScreen> createState() => _ProfileSetupScreenState();
@@ -24,7 +27,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
     final gameProvider = Provider.of<GameProvider>(context, listen: false);
 
     // Initialize connection first
-    gameProvider.init(widget.username);
+    gameProvider.init(widget.username, gender: widget.gender, interest: widget.interest);
 
     // Send profile update (a bit racy if connection isn't ready, but loop handles queue in robust apps)
     // For MVP, we hope the connect happens fast enough or we delay slightly
@@ -32,7 +35,6 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
         gameProvider.updateProfile(
             _bioController.text,
             _selectedTags,
-            // ignore: deprecated_member_use
             _petColor.value.toString()
         );
     });

@@ -14,6 +14,8 @@ class SocketService {
   final AuthService _authService = AuthService();
   WebSocketChannel? _channel;
   String? _username;
+  String? _gender;
+  String? _interest;
   Timer? _reconnectTimer;
   Timer? _pingTimer;
   bool _isConnected = false;
@@ -21,8 +23,10 @@ class SocketService {
 
   SocketService(this.gameProvider);
 
-  void connect(String username) {
+  void connect(String username, String? gender, String? interest) {
     _username = username;
+    _gender = gender;
+    _interest = interest;
     _disposed = false;
     _initConnection();
   }
@@ -64,7 +68,9 @@ class SocketService {
       'payload': {
         'user_id': _authService.currentUserId ?? "",
         'username': _username,
-        'email': _authService.currentUserEmail
+        'email': _authService.currentUserEmail,
+        'gender': _gender,
+        'interest': _interest,
       }
     });
     _startHeartbeat();
