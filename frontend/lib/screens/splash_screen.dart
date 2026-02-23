@@ -38,11 +38,23 @@ class _SplashScreenState extends State<SplashScreen> {
     // Quick check — no artificial delay
     if (_authService.currentUser != null) {
       if (!mounted) return;
-      final username = _authService.currentUsername ?? "User";
-      Provider.of<GameProvider>(context, listen: false).init(username);
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const HomeScreen()),
-      );
+      
+      final metadata = _authService.currentUser!.userMetadata;
+      final bool setupCompleted = metadata?['profile_setup_completed'] ?? false;
+      final username = metadata?['username'] ?? _authService.currentUsername ?? "User";
+      final gender = metadata?['gender'];
+      final interest = metadata?['interest'];
+
+      if (!setupCompleted) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => ProfileSetupScreen(username: username, gender: gender, interest: interest)),
+        );
+      } else {
+        Provider.of<GameProvider>(context, listen: false).init(username, gender: gender, interest: interest);
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => const HomeScreen()),
+        );
+      }
       return;
     }
     // No session found, show the login form
@@ -67,10 +79,12 @@ class _SplashScreenState extends State<SplashScreen> {
          return;
       }
 
+      final usernameCalculated = email.split('@')[0];
+
       if (_isLogin) {
         await _authService.signIn(email, password);
       } else {
-        final response = await _authService.signUp(email, password);
+        final response = await _authService.signUp(email, password, username: usernameCalculated, gender: _gender, interest: _interest);
 
         if (response.session == null && response.user != null) {
            if (!mounted) return;
@@ -91,14 +105,18 @@ class _SplashScreenState extends State<SplashScreen> {
 
       if (!mounted) return;
 
-      final username = email.split('@')[0];
+      final metadata = _authService.currentUser?.userMetadata;
+      final bool setupCompleted = metadata?['profile_setup_completed'] ?? false;
+      final usernameStr = metadata?['username'] ?? usernameCalculated;
+      final gen = metadata?['gender'] ?? _gender;
+      final inter = metadata?['interest'] ?? _interest;
 
-      if (!_isLogin) {
+      if (!setupCompleted) {
          Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (_) => ProfileSetupScreen(username: username, gender: _gender, interest: _interest)),
+          MaterialPageRoute(builder: (_) => ProfileSetupScreen(username: usernameStr, gender: gen, interest: inter)),
         );
       } else {
-         Provider.of<GameProvider>(context, listen: false).init(username);
+         Provider.of<GameProvider>(context, listen: false).init(usernameStr, gender: gen, interest: inter);
          Navigator.of(context).pushReplacement(
           MaterialPageRoute(builder: (_) => const HomeScreen()),
         );

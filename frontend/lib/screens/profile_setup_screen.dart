@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../providers/game_provider.dart';
 import '../widgets/pet_widget.dart';
 import 'home_screen.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class ProfileSetupScreen extends StatefulWidget {
   final String username;
@@ -31,12 +32,21 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
 
     // Send profile update (a bit racy if connection isn't ready, but loop handles queue in robust apps)
     // For MVP, we hope the connect happens fast enough or we delay slightly
-    Future.delayed(const Duration(seconds: 1), () {
+    Future.delayed(const Duration(seconds: 1), () async {
         gameProvider.updateProfile(
             _bioController.text,
             _selectedTags,
             _petColor.value.toString()
         );
+        try {
+          // Import supabase to use it
+          // We will update the user metadata
+          await Supabase.instance.client.auth.updateUser(
+            UserAttributes(data: {'profile_setup_completed': true})
+          );
+        } catch (e) {
+          debugPrint("Failed to update profile setup flag: $e");
+        }
     });
 
     Navigator.of(context).pushReplacement(

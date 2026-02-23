@@ -94,13 +94,17 @@ pub async fn handle_socket(socket: WebSocket, state: SharedState) {
                                     let new_gender = gender.or(db_gender.clone());
                                     let new_interest = interest.or(db_interest.clone());
 
-                                    let _ = sqlx::query("UPDATE users SET email = $1, gender = $2, interest = $3 WHERE id = $4")
+                                    let update_result = sqlx::query("UPDATE users SET email = $1, gender = $2, interest = $3 WHERE id = $4")
                                         .bind(new_email)
                                         .bind(&new_gender)
                                         .bind(&new_interest)
                                         .bind(&target_uuid_str)
                                         .execute(&db_pool)
                                         .await;
+                                    
+                                    if let Err(e) = update_result {
+                                        error!(user_id = %target_uuid_str, error = %e, "Failed to update existing user in DB");
+                                    }
                                     
                                     db_gender = new_gender;
                                     db_interest = new_interest;
@@ -120,7 +124,7 @@ pub async fn handle_socket(socket: WebSocket, state: SharedState) {
                                     }).unwrap()));
                                     continue;
                                 }
-                                let _ = sqlx::query("INSERT INTO users (id, username, email, gender, interest) VALUES ($1, $2, $3, $4, $5)")
+                                let insert_result = sqlx::query("INSERT INTO users (id, username, email, gender, interest) VALUES ($1, $2, $3, $4, $5)")
                                     .bind(&target_uuid_str)
                                     .bind(&username)
                                     .bind(&email_val)
@@ -128,7 +132,17 @@ pub async fn handle_socket(socket: WebSocket, state: SharedState) {
                                     .bind(&interest_val)
                                     .execute(&db_pool)
                                     .await;
-                                info!(user_id = %target_uuid, username = %username, "New user created in DB");
+                                
+                                match insert_result {
+                                    Ok(_) => info!(user_id = %target_uuid, username = %username, "New user created in DB"),
+                                    Err(e) => {
+                                        error!(user_id = %target_uuid, username = %username, error = %e, "Failed to create new user in DB");
+                                        let _ = tx.send(Message::Text(serde_json::to_string(&ServerMessage::Error {
+                                            message: "Failed to create user record. Please contact support.".to_string()
+                                        }).unwrap()));
+                                        continue;
+                                    }
+                                }
                                 (target_uuid, username, gender_val, interest_val)
                             },
                             Err(e) => {
